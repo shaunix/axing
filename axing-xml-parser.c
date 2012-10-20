@@ -293,7 +293,7 @@ namespace_map_get_namespace (AxingNamespaceMap *map,
     for (i = parser->priv->event_stack->len - 1; i >= 0; i--) {
         frame = g_array_index (parser->priv->event_stack, ParserStackFrame, i);
         if (frame.nshash != NULL) {
-            char *ns = g_hash_table_lookup (frame.nshash, prefix);
+            const char *ns = g_hash_table_lookup (frame.nshash, prefix);
             if (ns != NULL) {
                 return ns;
             }
@@ -803,6 +803,11 @@ context_parse_end_element (ParserContext *context, char **line)
         }
         context->parser->priv->event_namespace = g_strdup (namespace);
     }
+    else {
+        const char *namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser), "");
+        if (namespace != NULL)
+            context->parser->priv->event_namespace = g_strdup (namespace);
+    }
 
     frame = g_array_index (context->parser->priv->event_stack,
                            ParserStackFrame,
@@ -1119,6 +1124,11 @@ context_trigger_start_element (ParserContext *context)
             ERROR_NS_NOTFOUND(context);
         }
         context->parser->priv->event_namespace = g_strdup (namespace);
+    }
+    else {
+        const char *namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser), "");
+        if (namespace != NULL)
+            context->parser->priv->event_namespace = g_strdup (namespace);
     }
 
     context->parser->priv->event_type = AXING_STREAM_EVENT_START_ELEMENT;
