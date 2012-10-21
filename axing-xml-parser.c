@@ -39,6 +39,7 @@ typedef enum {
     PARSER_STATE_ENDELM,
 
     PARSER_STATE_TEXT,
+    PARSER_STATE_COMMENT,
 
     PARSER_STATE_NULL
 } ParserState;
@@ -699,6 +700,9 @@ context_parse_line (ParserContext *context, char *line)
         case PARSER_STATE_ENDELM:
             context_parse_end_element (context, &c);
             break;
+        case PARSER_STATE_COMMENT:
+            context_parse_comment (context, &c);
+            break;
         default:
             g_assert_not_reached ();
         }
@@ -718,7 +722,52 @@ context_parse_line (ParserContext *context, char *line)
 static void
 context_parse_comment (ParserContext *context, char **line)
 {
-    ERROR_FIXME (context);
+    if (context->state != PARSER_STATE_COMMENT) {
+        if (!g_str_has_prefix (*line, "<!--")) {
+            ERROR_SYNTAX(context);
+        }
+        (*line) += 4; context->colnum += 4;
+        context->cur_text = g_string_new (NULL);
+        context->state = PARSER_STATE_COMMENT;
+    }
+
+    while ((*line)[0] != '\0') {
+        gunichar cp;
+        char *next;
+        gsize bytes;
+        if ((*line)[0] == '-' && (*line)[1] == '-') {
+            if ((*line)[2] != '>') {
+                ERROR_SYNTAX(context);
+            }
+            (*line) += 3; context->colnum += 3;
+
+            context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+            context->cur_text = NULL;
+            context->parser->priv->event_type = AXING_STREAM_EVENT_COMMENT;
+
+            g_signal_emit_by_name (context->parser, "stream-event");
+            parser_clean_event_data (context->parser);
+            context->state = PARSER_STATE_TEXT;
+            return;
+        }
+        cp = g_utf8_get_char (*line);
+        if (!XML_IS_CHAR(cp, context)) {
+            ERROR_SYNTAX(context);
+        }
+        next = g_utf8_next_char (*line);
+        bytes = next - *line;
+        /* FIXME: newlines */
+        g_string_append_len (context->cur_text, *line, bytes);
+        *line = next; context->colnum += 1;
+    }
+
+    if ((*line)[0] == '\0') {
+        if (context->cur_text == NULL) {
+            context->cur_text = g_string_new (NULL);
+        }
+        g_string_append_c (context->cur_text, 0xA);
+    }
+
  error:
     return;
 }

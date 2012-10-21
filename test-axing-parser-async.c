@@ -39,6 +39,13 @@ stream_event (AxingStream *stream,
     g_print ("# %s\n", checksum);
     g_free (checksum);
     break;
+  case AXING_STREAM_EVENT_COMMENT:
+    for (i = 0; i < indent; i++) g_print ("  ");
+    checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
+                                              axing_stream_get_event_content (stream), -1);
+    g_print ("! %s\n", checksum);
+    g_free (checksum);
+    break;
   default:
     g_print ("event\n");
   }
