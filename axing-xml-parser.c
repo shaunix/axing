@@ -947,7 +947,7 @@ context_parse_start_element (ParserContext *context, char **line)
     context->node_linenum = context->linenum;
     context->node_colnum = context->colnum;
     (*line)++; context->colnum++;
-    while ((*line)[0] && !(XML_IS_SPACE((*line)[0]) || (*line)[0] == '>')) {
+    while ((*line)[0] && !(XML_IS_SPACE((*line)[0]) || (*line)[0] == '>' || (*line)[0] == '/')) {
         gunichar cp;
         char *next;
         gsize bytes;
