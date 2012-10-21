@@ -47,8 +47,8 @@ typedef enum {
     */
     AXING_STREAM_EVENT_CONTENT,
     AXING_STREAM_EVENT_COMMENT,
-    /*
     AXING_STREAM_EVENT_CDATA,
+    /*
     AXING_STREAM_EVENT_ENTITY,
     */
     /*

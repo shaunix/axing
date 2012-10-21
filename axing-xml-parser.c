@@ -40,6 +40,7 @@ typedef enum {
 
     PARSER_STATE_TEXT,
     PARSER_STATE_COMMENT,
+    PARSER_STATE_CDATA,
 
     PARSER_STATE_NULL
 } ParserState;
@@ -142,6 +143,8 @@ static void      context_read_line_cb           (GDataInputStream     *stream,
 static void      context_parse_xml_decl         (ParserContext        *context);
 static void      context_parse_line             (ParserContext        *context,
                                                  char                 *line);
+static void      context_parse_cdata            (ParserContext        *context,
+                                                 char                **line);
 static void      context_parse_comment          (ParserContext        *context,
                                                  char                **line);
 static void      context_parse_instruction      (ParserContext        *context,
@@ -671,7 +674,10 @@ context_parse_line (ParserContext *context, char *line)
             if (c[0] == '<') {
                 switch (c[1]) {
                 case '!':
-                    context_parse_comment (context, &c);
+                    if (c[2] == '[')
+                        context_parse_cdata (context, &c);
+                    else
+                        context_parse_comment (context, &c);
                     break;
                 case '?':
                     context_parse_instruction (context, &c);
@@ -700,6 +706,9 @@ context_parse_line (ParserContext *context, char *line)
         case PARSER_STATE_ENDELM:
             context_parse_end_element (context, &c);
             break;
+        case PARSER_STATE_CDATA:
+            context_parse_cdata (context, &c);
+            break;
         case PARSER_STATE_COMMENT:
             context_parse_comment (context, &c);
             break;
@@ -718,6 +727,55 @@ context_parse_line (ParserContext *context, char *line)
     return;
 }
 
+static void
+context_parse_cdata (ParserContext *context, char **line)
+{
+    if (context->state != PARSER_STATE_CDATA) {
+        if (!g_str_has_prefix (*line, "<![CDATA[")) {
+            ERROR_SYNTAX(context);
+        }
+        (*line) += 9; context->colnum += 9;
+        context->cur_text = g_string_new (NULL);
+        context->state = PARSER_STATE_CDATA;
+    }
+
+    while ((*line)[0] != '\0') {
+        gunichar cp;
+        char *next;
+        gsize bytes;
+        if ((*line)[0] == ']' && (*line)[1] == ']' && (*line)[2] == '>') {
+            (*line) += 3; context->colnum += 3;
+
+            context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+            context->cur_text = NULL;
+            context->parser->priv->event_type = AXING_STREAM_EVENT_CDATA;
+
+            g_signal_emit_by_name (context->parser, "stream-event");
+            parser_clean_event_data (context->parser);
+            context->state = PARSER_STATE_TEXT;
+            return;
+        }
+        cp = g_utf8_get_char (*line);
+        if (!XML_IS_CHAR(cp, context)) {
+            ERROR_SYNTAX(context);
+        }
+        next = g_utf8_next_char (*line);
+        bytes = next - *line;
+        /* FIXME: newlines */
+        g_string_append_len (context->cur_text, *line, bytes);
+        *line = next; context->colnum += 1;
+    }
+
+    if ((*line)[0] == '\0') {
+        if (context->cur_text == NULL) {
+            context->cur_text = g_string_new (NULL);
+        }
+        g_string_append_c (context->cur_text, 0xA);
+    }
+
+ error:
+    return;
+}
 
 static void
 context_parse_comment (ParserContext *context, char **line)
