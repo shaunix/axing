@@ -1,0 +1,5 @@
+#!/bin/sh
+for xml in tests/xml/*.xml; do
+    txt=tests/results/`basename $xml .xml`.txt;
+    test -f $txt && ./test-axing-parser-async $xml | cmp -s - $txt || (echo $xml; exit 1; ) || break;
+done

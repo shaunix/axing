@@ -1,0 +1,5 @@
+[ doc |doc ()
+  [ a |a ()
+  ] a |a ()
+] doc |doc ()
+finish
