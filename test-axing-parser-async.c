@@ -5,6 +5,7 @@
 
 GMainLoop *loop;
 
+int errcode;
 int indent;
 
 static void
@@ -65,10 +66,13 @@ parse_finish (AxingXmlParser  *parser,
 {
   GError *error = NULL;
   axing_xml_parser_parse_finish (parser, res, &error);
-  if (error)
+  if (error) {
+    errcode = 1;
     g_print ("error: %s\n", error->message);
-  else
+  }
+  else {
     g_print ("finish\n");
+  }
   g_main_loop_quit (loop);
 }
 
@@ -81,6 +85,7 @@ main (int argc, char **argv)
   setlocale(LC_ALL, "");
 
   indent = 0;
+  errcode = 0;
 
   if (argc > 1) {
     GFile *file;
@@ -100,5 +105,5 @@ main (int argc, char **argv)
   loop = g_main_loop_new (NULL, FALSE);
   g_main_loop_run (loop);
   g_object_unref (parser);
-  return 0;
+  return errcode;
 }
