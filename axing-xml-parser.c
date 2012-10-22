@@ -668,7 +668,18 @@ context_parse_line (ParserContext *context, char *line)
         case PARSER_STATE_START:
         case PARSER_STATE_ROOT:
         case PARSER_STATE_TEXT:
-            if (context->state != PARSER_STATE_TEXT) {
+            if (context->state == PARSER_STATE_TEXT) {
+                if (context->cur_text != NULL) {
+                    g_free (context->parser->priv->event_content);
+                    context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                    context->cur_text = NULL;
+                    context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
+
+                    g_signal_emit_by_name (context->parser, "stream-event");
+                    parser_clean_event_data (context->parser);
+                }
+            }
+            else {
                 EAT_SPACES (c, line, -1, context);
             }
             if (c[0] == '<') {
@@ -693,7 +704,7 @@ context_parse_line (ParserContext *context, char *line)
             else if (context->state == PARSER_STATE_TEXT) {
                 context_parse_text (context, &c);
             }
-            else {
+            else if (c[0] != '\0') {
                 ERROR_SYNTAX(context);
             }
             break;
