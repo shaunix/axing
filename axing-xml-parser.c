@@ -398,8 +398,8 @@ axing_xml_parser_parse_async (AxingXmlParser         *parser,
     if (cancellable)
         parser->priv->cancellable = g_object_ref (cancellable);
     parser->priv->result = g_simple_async_result_new (G_OBJECT (parser),
-                                                callback, user_data,
-                                                axing_xml_parser_parse_async);
+                                                      callback, user_data,
+                                                      axing_xml_parser_parse_async);
 
     stream = axing_resource_get_input_stream (parser->priv->resource);
     if (stream == NULL) {
@@ -487,6 +487,19 @@ context_read_line_cb (GDataInputStream *stream,
         return;
     }
     line = g_data_input_stream_read_line_finish (stream, res, NULL, &(context->parser->priv->error));
+    if (line == NULL && context->parser->priv->error == NULL) {
+        if (context->parser->priv->event_stack->len != 0) {
+            ParserStackFrame frame = g_array_index (context->parser->priv->event_stack,
+                                                    ParserStackFrame,
+                                                    context->parser->priv->event_stack->len - 1);
+            context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR,
+                                                        AXING_XML_PARSER_ERROR_MISSINGEND,
+                                                        "Missing end tag for \"%s\" at line %i, column %i.",
+                                                        frame.qname, context->linenum, context->colnum);
+            g_simple_async_result_complete (context->parser->priv->result);
+            return;
+        }
+    }
     if (line == NULL || context->parser->priv->error) {
         g_simple_async_result_complete (context->parser->priv->result);
         return;
@@ -663,13 +676,23 @@ context_parse_line (ParserContext *context, char *line)
 {
     char *c = line;
 
+    if (line[0] == '\0' && context->cur_text != NULL) {
+        g_string_append_c (context->cur_text, 0xA);
+        return;
+    }
     while (c[0] != '\0') {
         switch (context->state) {
         case PARSER_STATE_START:
         case PARSER_STATE_ROOT:
         case PARSER_STATE_TEXT:
-            if (context->state == PARSER_STATE_TEXT) {
-                if (context->cur_text != NULL) {
+            if (context->state == PARSER_STATE_TEXT && context->parser->priv->event_stack->len == 0) {
+                context->state = PARSER_STATE_ROOT;
+            }
+            if (context->state != PARSER_STATE_TEXT) {
+                EAT_SPACES (c, line, -1, context);
+            }
+            if (c[0] == '<') {
+                if (context->state == PARSER_STATE_TEXT && context->cur_text != NULL) {
                     g_free (context->parser->priv->event_content);
                     context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
                     context->cur_text = NULL;
@@ -678,11 +701,6 @@ context_parse_line (ParserContext *context, char *line)
                     g_signal_emit_by_name (context->parser, "stream-event");
                     parser_clean_event_data (context->parser);
                 }
-            }
-            else {
-                EAT_SPACES (c, line, -1, context);
-            }
-            if (c[0] == '<') {
                 switch (c[1]) {
                 case '!':
                     if (c[2] == '[')
