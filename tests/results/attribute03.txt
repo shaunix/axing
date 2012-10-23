@@ -1,0 +1,2 @@
+[ doc |doc ()
+error: Duplicate attribute "foo" at line 1, column 19.

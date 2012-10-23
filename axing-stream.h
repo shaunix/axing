@@ -92,12 +92,22 @@ struct _AxingStreamClass {
     GObjectClass parent_class;
 
     /*< public >*/
-    AxingStreamEventType    (* get_event_type)         (AxingStream      *stream);
-    const char *            (* get_event_localname)    (AxingStream      *stream);
-    const char *            (* get_event_qname)        (AxingStream      *stream);
-    const char *            (* get_event_namespace)    (AxingStream      *stream);
-    const char *            (* get_event_prefix)       (AxingStream      *stream);
-    const char *            (* get_event_content)      (AxingStream      *stream);
+    AxingStreamEventType    (* get_event_type)          (AxingStream   *stream);
+    const char *            (* get_event_qname)         (AxingStream   *stream);
+    const char *            (* get_event_localname)     (AxingStream   *stream);
+    const char *            (* get_event_prefix)        (AxingStream   *stream);
+    const char *            (* get_event_namespace)     (AxingStream   *stream);
+    const char *            (* get_event_content)       (AxingStream   *stream);
+    const char * const *    (* get_attributes)          (AxingStream   *stream);
+    const char *            (* get_attribute_localname) (AxingStream   *stream,
+                                                         const char    *qname);
+    const char *            (* get_attribute_prefix)    (AxingStream   *stream,
+                                                         const char    *qname);
+    const char *            (* get_attribute_namespace) (AxingStream   *stream,
+                                                         const char    *qname);
+    const char *            (* get_attribute_value)     (AxingStream   *stream,
+                                                         const char    *name,
+                                                         const char    *ns);
 
     /*< private >*/
     void                    (* stream_event)           (AxingStream *stream);
@@ -110,14 +120,26 @@ struct _AxingStreamClass {
 };
 
 
-GType                axing_stream_get_type                (void);
+GType                  axing_stream_get_type                (void);
 
-AxingStreamEventType   axing_stream_get_event_type          (AxingStream *stream);
-const char *           axing_stream_get_event_localname     (AxingStream *stream);
-const char *           axing_stream_get_event_qname         (AxingStream *stream);
-const char *           axing_stream_get_event_namespace     (AxingStream *stream);
-const char *           axing_stream_get_event_prefix        (AxingStream *stream);
-const char *           axing_stream_get_event_content       (AxingStream *stream);
+AxingStreamEventType   axing_stream_get_event_type          (AxingStream   *stream);
+const char *           axing_stream_get_event_qname         (AxingStream   *stream);
+const char *           axing_stream_get_event_localname     (AxingStream   *stream);
+const char *           axing_stream_get_event_prefix        (AxingStream   *stream);
+const char *           axing_stream_get_event_namespace     (AxingStream   *stream);
+const char *           axing_stream_get_event_content       (AxingStream   *stream);
+
+const char * const *   axing_stream_get_attributes          (AxingStream   *stream);
+const char *           axing_stream_get_attribute_localname (AxingStream   *stream,
+                                                             const char    *qname);
+const char *           axing_stream_get_attribute_prefix    (AxingStream   *stream,
+                                                             const char    *qname);
+const char *           axing_stream_get_attribute_namespace (AxingStream   *stream,
+                                                             const char    *qname);
+const char *           axing_stream_get_attribute_value     (AxingStream   *stream,
+                                                             const char    *name,
+                                                             const char    *ns);
+
 
 #ifdef FIXME_utility_functions
 void         axing_stream_skip_current_element (AxingStream  *stream);

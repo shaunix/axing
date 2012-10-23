@@ -156,6 +156,51 @@ axing_stream_get_event_content (AxingStream *stream)
     return klass->get_event_content (stream);
 }
 
+const char * const *
+axing_stream_get_attributes (AxingStream *stream)
+{
+    AxingStreamClass *klass = AXING_STREAM_GET_CLASS (stream);
+    g_assert (klass->get_attributes != NULL);
+    return klass->get_attributes (stream);
+}
+
+const char *
+axing_stream_get_attribute_localname (AxingStream *stream,
+                                      const char  *qname)
+{
+    AxingStreamClass *klass = AXING_STREAM_GET_CLASS (stream);
+    g_assert (klass->get_attribute_localname != NULL);
+    return klass->get_attribute_localname (stream, qname);
+}
+
+const char *
+axing_stream_get_attribute_prefix (AxingStream *stream,
+                                   const char  *qname)
+{
+    AxingStreamClass *klass = AXING_STREAM_GET_CLASS (stream);
+    g_assert (klass->get_attribute_prefix != NULL);
+    return klass->get_attribute_prefix (stream, qname);
+}
+
+const char *
+axing_stream_get_attribute_namespace (AxingStream *stream,
+                                      const char  *qname)
+{
+    AxingStreamClass *klass = AXING_STREAM_GET_CLASS (stream);
+    g_assert (klass->get_attribute_namespace != NULL);
+    return klass->get_attribute_namespace (stream, qname);
+}
+
+const char *
+axing_stream_get_attribute_value (AxingStream *stream,
+                                  const char  *name,
+                                  const char  *ns)
+{
+    AxingStreamClass *klass = AXING_STREAM_GET_CLASS (stream);
+    g_assert (klass->get_attribute_value != NULL);
+    return klass->get_attribute_value (stream, name, ns);
+}
+
 static void
 stream_event_default (AxingStream *stream)
 {

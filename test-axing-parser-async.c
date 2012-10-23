@@ -12,6 +12,7 @@ static void
 stream_event (AxingStream *stream,
               gpointer     data)
 {
+  char **attrs;
   gchar *checksum;
   int i;
   switch (axing_stream_get_event_type (stream)) {
@@ -23,6 +24,21 @@ stream_event (AxingStream *stream,
              axing_stream_get_event_prefix (stream),
              axing_stream_get_event_localname (stream),
              axing_stream_get_event_namespace (stream));
+    attrs = (char **) axing_stream_get_attributes (stream);
+    while ((*attrs) != NULL) {
+      for (i = 0; i < indent; i++) g_print ("  ");
+      checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
+                                                axing_stream_get_attribute_value (stream, *attrs, NULL),
+                                                -1);
+      g_print ("@ %s %s|%s (%s) %s\n",
+               *attrs,
+               axing_stream_get_attribute_prefix (stream, *attrs),
+               axing_stream_get_attribute_localname (stream, *attrs),
+               axing_stream_get_attribute_namespace (stream, *attrs),
+               checksum);
+      g_free (checksum);
+      attrs++;
+    }
     break;
   case AXING_STREAM_EVENT_END_ELEMENT:
     indent--;

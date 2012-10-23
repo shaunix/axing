@@ -53,6 +53,27 @@ typedef struct {
 } ParserStackFrame;
 
 typedef struct {
+    char  *qname;
+    char  *value;
+
+    /* These three may be NULL to avoid extra strdups, but
+       the Stream API defines them never to be NULL when the
+       attribute exists. Value must be computed if NULL. */
+    char  *prefix;
+    char  *localname;
+    char  *namespace;
+
+    int    linenum;
+    int    colnum;
+} AttributeData;
+
+static void
+attribute_data_free (AttributeData *data) {
+    g_free (data->qname); g_free (data->prefix); g_free (data->localname);
+    g_free (data->namespace); g_free (data->value); g_free (data);
+}
+
+typedef struct {
     AxingXmlParser    *parser;
     GFile             *file;
     GInputStream      *srcstream;
@@ -101,6 +122,9 @@ struct _AxingXmlParserPrivate {
 
     GArray              *event_stack;
     char                *event_content;
+
+    char               **event_attrkeys;
+    AttributeData      **event_attrvals;
 };
 
 static void      axing_xml_parser_init          (AxingXmlParser       *parser);
@@ -118,12 +142,22 @@ static void      axing_xml_parser_set_property  (GObject              *object,
 
 static void      parser_clean_event_data        (AxingXmlParser       *parser);
 
-static AxingStreamEventType  stream_get_event_type      (AxingStream    *stream);
-static const char *          stream_get_event_qname     (AxingStream    *stream);
-static const char *          stream_get_event_prefix    (AxingStream    *stream);
-static const char *          stream_get_event_localname (AxingStream    *stream);
-static const char *          stream_get_event_namespace (AxingStream    *stream);
-static const char *          stream_get_event_content   (AxingStream    *stream);
+static AxingStreamEventType  stream_get_event_type          (AxingStream    *stream);
+static const char *          stream_get_event_qname         (AxingStream    *stream);
+static const char *          stream_get_event_prefix        (AxingStream    *stream);
+static const char *          stream_get_event_localname     (AxingStream    *stream);
+static const char *          stream_get_event_namespace     (AxingStream    *stream);
+static const char *          stream_get_event_content       (AxingStream    *stream);
+const char * const *         stream_get_attributes          (AxingStream    *stream);
+const char *                 stream_get_attribute_localname (AxingStream    *stream,
+                                                             const char     *qname);
+const char *                 stream_get_attribute_prefix    (AxingStream    *stream,
+                                                             const char     *qname);
+const char *                 stream_get_attribute_namespace (AxingStream    *stream,
+                                                             const char     *qname);
+const char *                 stream_get_attribute_value     (AxingStream    *stream,
+                                                             const char     *name,
+                                                             const char     *ns);
 
 
 static void         namespace_map_interface_init (AxingNamespaceMapInterface *iface);
@@ -199,6 +233,12 @@ axing_xml_parser_class_init (AxingXmlParserClass *klass)
     stream_class->get_event_localname = stream_get_event_localname;
     stream_class->get_event_namespace = stream_get_event_namespace;
     stream_class->get_event_content = stream_get_event_content;
+
+    stream_class->get_attributes = stream_get_attributes;
+    stream_class->get_attribute_localname = stream_get_attribute_localname;
+    stream_class->get_attribute_prefix = stream_get_attribute_prefix;
+    stream_class->get_attribute_namespace = stream_get_attribute_namespace;
+    stream_class->get_attribute_value = stream_get_attribute_value;
 
     object_class->get_property = axing_xml_parser_get_property;
     object_class->set_property = axing_xml_parser_set_property;
@@ -320,6 +360,17 @@ parser_clean_event_data (AxingXmlParser *parser)
     g_free (parser->priv->event_content);
     parser->priv->event_content = NULL;
 
+    if (parser->priv->event_attrvals != NULL) {
+        gint i;
+        for (i = 0; parser->priv->event_attrvals[i] != NULL; i++)
+            attribute_data_free (parser->priv->event_attrvals[i]);
+        g_free (parser->priv->event_attrvals);
+        parser->priv->event_attrvals = NULL;
+    }
+    /* strings owned by AttributeData structs */
+    g_free (parser->priv->event_attrkeys);
+    parser->priv->event_attrkeys = NULL;
+
     parser->priv->event_type = AXING_STREAM_EVENT_NONE;
 }
 
@@ -382,6 +433,100 @@ stream_get_event_namespace (AxingStream *stream)
     /* FIXME: check more states */
     g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
     return parser->priv->event_namespace ? parser->priv->event_namespace : "";
+}
+
+static char *nokeys[1] = {NULL};
+
+const char * const *
+stream_get_attributes (AxingStream *stream)
+{
+    AxingXmlParser *parser;
+    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
+    parser = (AxingXmlParser *) stream;
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    if (parser->priv->event_attrkeys == NULL) {
+        return (const char * const *) nokeys;
+    }
+    return (const char * const *) parser->priv->event_attrkeys;
+}
+
+const char *
+stream_get_attribute_localname (AxingStream *stream,
+                                const char  *qname)
+{
+    AxingXmlParser *parser;
+    int i;
+    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
+    parser = (AxingXmlParser *) stream;
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = parser->priv->event_attrvals[i];
+        if (g_str_equal (qname, data->qname)) {
+            return data->localname ? data->localname : data->qname;
+        }
+    }
+    return NULL;
+}
+
+const char *
+stream_get_attribute_prefix (AxingStream *stream,
+                             const char  *qname)
+{
+    AxingXmlParser *parser;
+    int i;
+    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
+    parser = (AxingXmlParser *) stream;
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = parser->priv->event_attrvals[i];
+        if (g_str_equal (qname, data->qname)) {
+            return data->localname ? data->localname : "";
+        }
+    }
+    return NULL;
+}
+
+const char *
+stream_get_attribute_namespace (AxingStream *stream,
+                                const char  *qname)
+{
+    AxingXmlParser *parser;
+    int i;
+    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
+    parser = (AxingXmlParser *) stream;
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = parser->priv->event_attrvals[i];
+        if (g_str_equal (qname, data->qname)) {
+            return data->localname ? data->localname : "";
+        }
+    }
+    return NULL;
+}
+
+const char *
+stream_get_attribute_value (AxingStream *stream,
+                            const char  *name,
+                            const char  *ns)
+{
+    AxingXmlParser *parser;
+    int i;
+    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
+    parser = (AxingXmlParser *) stream;
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = parser->priv->event_attrvals[i];
+        if (ns == NULL) {
+            if (g_str_equal (name, data->qname))
+                return data->value;
+        }
+        else {
+            if (g_str_equal (name, data->localname) &&
+                ((ns[0] == '\0') ? data->namespace == NULL : g_str_equal (ns, data->namespace)))
+                return data->value;
+        }
+    }
+    return NULL;
 }
 
 void
@@ -532,7 +677,11 @@ context_read_line_cb (GDataInputStream *stream,
 
 #define ERROR_NS_QNAME(context) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "Could not parse QName \"%s\" at line %i, column %i.", context->parser->priv->event_qname, context->node_linenum, context->node_colnum); goto error;
 
+#define ERROR_NS_QNAME_ATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "Could not parse QName \"%s\" at line %i, column %i.", data->qname, data->linenum, data->colnum); goto error;
+
 #define ERROR_NS_NOTFOUND(context) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", context->parser->priv->event_prefix, context->node_linenum, context->node_colnum); goto error;
+
+#define ERROR_NS_NOTFOUND_ATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", data->prefix, data->linenum, data->colnum); goto error;
 
 #define ERROR_FIXME(context) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "Unsupported feature at line %i, column %i.", context->linenum, context->colnum); goto error;
 
@@ -1138,16 +1287,23 @@ context_parse_attrs (ParserContext *context, char **line)
                     context->cur_attrname = NULL;
                 }
                 else {
+                    AttributeData *data;
                     if (context->cur_attrs == NULL) {
                         context->cur_attrs = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                                                    g_free, g_free);
+                                                                    g_free,
+                                                                    (GDestroyNotify) attribute_data_free);
                     }
                     if (g_hash_table_lookup (context->cur_attrs, context->cur_attrname) != NULL) {
                         ERROR_DUPATTR(context);
                     }
+                    data = g_new0 (AttributeData, 1);
+                    data->qname = context->cur_attrname;
+                    data->value = attrval;
+                    data->linenum = context->attr_linenum;
+                    data->colnum = context->attr_colnum;
                     g_hash_table_insert (context->cur_attrs,
                                          context->cur_attrname,
-                                         attrval);
+                                         data);
                     context->cur_attrname = NULL;
                 }
 
@@ -1267,13 +1423,63 @@ context_trigger_start_element (ParserContext *context)
             context->parser->priv->event_namespace = g_strdup (namespace);
     }
 
+    if (context->cur_attrs) {
+        GHashTableIter attrs;
+        gpointer key, val;
+        guint num = g_hash_table_size (context->cur_attrs);
+        guint cur;
+
+        context->parser->priv->event_attrkeys = g_new0 (char *, num + 1);
+        context->parser->priv->event_attrvals = g_new0 (AttributeData *, num + 1);
+
+        cur = 0;
+        /* We drop from the hash at each iteration, stealing the key and
+           value. So we re-init the iterator each time. */
+        while (g_hash_table_iter_init (&attrs, context->cur_attrs),
+               g_hash_table_iter_next (&attrs, &key, &val)) {
+            char *qname = (char *) key;
+            AttributeData *data = (AttributeData *) val;
+            const char *colon;
+
+            /* FIXME: check for duplicate expanded name */
+
+            colon = strchr (qname, ':');
+            if (colon != NULL) {
+                gunichar cp;
+                const char *localname;
+                const char *namespace;
+                if (colon == qname) {
+                    ERROR_NS_QNAME_ATTR(context, data);
+                }
+                localname = colon + 1;
+                if (localname[0] == '\0' || strchr (localname, ':')) {
+                    ERROR_NS_QNAME_ATTR(context, data);
+                }
+                cp = g_utf8_get_char (localname);
+                if (!XML_IS_NAME_START_CHAR(cp)) {
+                    ERROR_NS_QNAME_ATTR(context, data);
+                }
+                data->prefix = g_strndup (qname, colon - qname);
+                data->localname = g_strdup (localname);
+                namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser),
+                                                         data->prefix);
+                if (namespace == NULL) {
+                    ERROR_NS_NOTFOUND_ATTR(context, data);
+                }
+                data->namespace = g_strdup (namespace);
+            }
+
+            context->parser->priv->event_attrkeys[cur] = qname;
+            context->parser->priv->event_attrvals[cur] = data;
+            cur++;
+            g_hash_table_steal (context->cur_attrs, key);
+        }
+        g_hash_table_destroy (context->cur_attrs);
+        context->cur_attrs = NULL;
+    }
+
     context->parser->priv->event_type = AXING_STREAM_EVENT_START_ELEMENT;
     g_signal_emit_by_name (context->parser, "stream-event");
-
-    /* FIXME: figure out the API to expose these */
-    if (context->cur_attrs)
-        g_hash_table_destroy (context->cur_attrs);
-    context->cur_attrs = NULL;
 
     if (context->empty) {
         if (frame.nshash) {
