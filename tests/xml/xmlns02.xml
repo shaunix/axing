@@ -1,0 +1,4 @@
+<doc xmlns:foo="http://example.com/">
+  <foo:a/>
+  <b/>
+</doc>

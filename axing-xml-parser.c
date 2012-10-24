@@ -480,7 +480,7 @@ stream_get_attribute_prefix (AxingStream *stream,
     for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
         AttributeData *data = parser->priv->event_attrvals[i];
         if (g_str_equal (qname, data->qname)) {
-            return data->localname ? data->localname : "";
+            return data->prefix ? data->prefix : "";
         }
     }
     return NULL;
@@ -498,7 +498,7 @@ stream_get_attribute_namespace (AxingStream *stream,
     for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
         AttributeData *data = parser->priv->event_attrvals[i];
         if (g_str_equal (qname, data->qname)) {
-            return data->localname ? data->localname : "";
+            return data->namespace ? data->namespace : "";
         }
     }
     return NULL;
