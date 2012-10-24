@@ -683,6 +683,8 @@ context_read_line_cb (GDataInputStream *stream,
 
 #define ERROR_NS_NOTFOUND_ATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", data->prefix, data->linenum, data->colnum); goto error;
 
+#define ERROR_NS_DUPATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, "Duplicate expanded name for attribute \"%s\" at line %i, column %i.", data->qname, data->linenum, data->colnum); goto error;
+
 #define ERROR_FIXME(context) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "Unsupported feature at line %i, column %i.", context->linenum, context->colnum); goto error;
 
 /* FIXME: XML 1.1 newlines */
@@ -1448,6 +1450,7 @@ context_trigger_start_element (ParserContext *context)
                 gunichar cp;
                 const char *localname;
                 const char *namespace;
+                int pre;
                 if (colon == qname) {
                     ERROR_NS_QNAME_ATTR(context, data);
                 }
@@ -1467,6 +1470,15 @@ context_trigger_start_element (ParserContext *context)
                     ERROR_NS_NOTFOUND_ATTR(context, data);
                 }
                 data->namespace = g_strdup (namespace);
+                for (pre = 0; pre < cur; pre++) {
+                    if (context->parser->priv->event_attrvals[pre]->namespace &&
+                        g_str_equal (context->parser->priv->event_attrvals[pre]->namespace,
+                                     data->namespace) &&
+                        g_str_equal (context->parser->priv->event_attrvals[pre]->localname,
+                                     data->localname)) {
+                        ERROR_NS_DUPATTR(context, data);
+                    }
+                }
             }
 
             context->parser->priv->event_attrkeys[cur] = qname;

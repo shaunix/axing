@@ -1,0 +1,3 @@
+<doc xmlns:foo="http://example.com/">
+  <a xmlns:bar="http://example.com/" foo:fe="fi" bar:fe="fo"/>
+</doc>

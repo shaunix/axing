@@ -1,0 +1,3 @@
+[ doc |doc ()
+  # f67be96ce768fb5b40aecf0438f97886
+error: Duplicate expanded name for attribute "bar:fe" at line 2, column 50.
