@@ -26,6 +26,8 @@
 #include "axing-stream.h"
 #include "axing-xml-parser.h"
 
+#define NS_XML "http://www.w3.org/XML/1998/namespace"
+
 typedef enum {
     PARSER_STATE_NONE,
 
@@ -334,6 +336,9 @@ namespace_map_get_namespace (AxingNamespaceMap *map,
     AxingXmlParser *parser = AXING_XML_PARSER (map);
     ParserStackFrame frame;
     int i;
+    if (g_str_equal (prefix, "xml")) {
+        return NS_XML;
+    }
     for (i = parser->priv->event_stack->len - 1; i >= 0; i--) {
         frame = g_array_index (parser->priv->event_stack, ParserStackFrame, i);
         if (frame.nshash != NULL) {
@@ -684,6 +689,8 @@ context_read_line_cb (GDataInputStream *stream,
 #define ERROR_NS_NOTFOUND_ATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", data->prefix, data->linenum, data->colnum); goto error;
 
 #define ERROR_NS_DUPATTR(context, data) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, "Duplicate expanded name for attribute \"%s\" at line %i, column %i.", data->qname, data->linenum, data->colnum); goto error;
+
+#define ERROR_NS_INVALID(context, prefix) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, "Invalid namespace for prefix \"%s\" at line %i, column %i.", prefix, context->attr_linenum, context->attr_colnum); goto error;
 
 #define ERROR_FIXME(context) context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "Unsupported feature at line %i, column %i.", context->linenum, context->colnum); goto error;
 
@@ -1274,6 +1281,19 @@ context_parse_attrs (ParserContext *context, char **line)
                 }
 
                 if (xmlns != NULL) {
+                    if (g_str_equal (xmlns, "xml")) {
+                        if (!g_str_equal(attrval, NS_XML)) {
+                            ERROR_NS_INVALID(context, xmlns);
+                        }
+                    }
+                    else {
+                        if (g_str_equal(attrval, NS_XML)) {
+                            ERROR_NS_INVALID(context, xmlns);
+                        }
+                    }
+                    if (g_str_equal (xmlns, "xmlns")) {
+                        ERROR_NS_INVALID(context, xmlns);
+                    }
                     if (context->cur_nshash == NULL) {
                         context->cur_nshash = g_hash_table_new_full (g_str_hash, g_str_equal,
                                                                      g_free, g_free);
