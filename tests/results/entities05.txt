@@ -1,0 +1,8 @@
+[ doc |doc ()
+  # 68b329da9893e34099c7d8ad5cb9c940
+  [ a |a ()
+    @ href |href () b7af79d6dca1967fc1f4e52853b9f557
+  ] a |a ()
+  # 68b329da9893e34099c7d8ad5cb9c940
+] doc |doc ()
+finish

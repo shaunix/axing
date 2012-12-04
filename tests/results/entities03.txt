@@ -1,0 +1,2 @@
+[ doc |doc ()
+error: Incorrect entity reference at line 1, column 6.

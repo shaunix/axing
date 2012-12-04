@@ -1,0 +1,9 @@
+[ doc |doc ()
+  # 68b329da9893e34099c7d8ad5cb9c940
+  [ a |a ()
+    @ b |b () 95e029696a8e77db6f75665e6464c095
+    # 95e029696a8e77db6f75665e6464c095
+  ] a |a ()
+  # 68b329da9893e34099c7d8ad5cb9c940
+  [ wrong |wrong ()
+error: Incorrect entity reference at line 3, column 8.
