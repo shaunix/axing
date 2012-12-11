@@ -1,0 +1,9 @@
+<!DOCTYPE doc [
+<!NOTATION one PUBLIC "some public id">
+<!NOTATION two PUBLIC 
+  "some publid id" 
+  "some system id"
+>
+<!NOTATION three SYSTEM "some system id"  >
+]>
+<doc/>

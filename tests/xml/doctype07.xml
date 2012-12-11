@@ -1,0 +1,12 @@
+<!DOCTYPE doc SYSTEM "http://example.com/doc" [
+<!ELEMENT doc EMPTY>
+<!ATTLIST
+  doc
+ version CDATA
+  #REQUIRED
+ status ("draft" | "review" | "final") #IMPLIED
+  class CDATA #FIXED
+   "- domain/doc "
+>
+]>
+<doc/>

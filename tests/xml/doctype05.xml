@@ -1,0 +1,17 @@
+<!DOCTYPE doc SYSTEM "http://example.com/doc" [
+<!ELEMENT 
+  doc 
+  ( data | (head ?, body))>
+<!ELEMENT data ANY
+>
+<!ELEMENT head
+  EMPTY >
+<!ELEMENT body (para  + ) >
+<!ELEMENT para (
+ #PCDATA
+ | span
+)>
+<!ELEMENT span   ( #PCDATA   ) >
+  ]
+ >
+<doc/>

@@ -1,0 +1,6 @@
+<!DOCTYPE doc SYSTEM "http://example.com/doc" [
+<!ELEMENT doc EMPTY>
+]
+!
+>
+<doc/>

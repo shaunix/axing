@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!NOTATION broke PUBLIC "some public id"'system'>
+]>
+<doc/>

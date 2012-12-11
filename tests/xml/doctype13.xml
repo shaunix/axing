@@ -1,0 +1,22 @@
+<!DOCTYPE doc [
+ <!ENTITY
+ one "1"><!ENTITY two "<two>"
+>
+  <!ENTITY three PUBLIC "some pubid"
+"some sysid">
+<!ENTITY four SYSTEM "
+some
+system
+id">
+<!ENTITY % five "5">
+<!ENTITY % six PUBLIC "some pubid" 'some sysid'>
+<!ENTITY % seven SYSTEM "some sysid">
+<!ENTITY eight PUBLIC "some pubid"
+"some sysid"
+  NDATA äéıōù>
+<!ENTITY nine SYSTEM
+"some sysid"
+ NDATA äéıōù>
+]
+>
+<doc/>

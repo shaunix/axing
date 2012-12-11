@@ -44,8 +44,48 @@ typedef enum {
     PARSER_STATE_COMMENT,
     PARSER_STATE_CDATA,
 
+    PARSER_STATE_DOCTYPE,
     PARSER_STATE_NULL
 } ParserState;
+
+typedef enum {
+    DOCTYPE_STATE_START,
+    DOCTYPE_STATE_NAME,
+    DOCTYPE_STATE_SYSTEM,
+    DOCTYPE_STATE_SYSTEM_VAL,
+    DOCTYPE_STATE_PUBLIC,
+    DOCTYPE_STATE_PUBLIC_VAL,
+    DOCTYPE_STATE_EXTID,
+    DOCTYPE_STATE_INT,
+    DOCTYPE_STATE_INT_ELEMENT_START,
+    DOCTYPE_STATE_INT_ELEMENT_NAME,
+    DOCTYPE_STATE_INT_ELEMENT_VALUE,
+    DOCTYPE_STATE_INT_ELEMENT_AFTER,
+    DOCTYPE_STATE_INT_ATTLIST_START,
+    DOCTYPE_STATE_INT_ATTLIST_NAME,
+    DOCTYPE_STATE_INT_ATTLIST_VALUE,
+    DOCTYPE_STATE_INT_ATTLIST_QUOTE,
+    DOCTYPE_STATE_INT_ATTLIST_AFTER,
+    DOCTYPE_STATE_INT_NOTATION_START,
+    DOCTYPE_STATE_INT_NOTATION_NAME,
+    DOCTYPE_STATE_INT_NOTATION_SYSTEM,
+    DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL,
+    DOCTYPE_STATE_INT_NOTATION_PUBLIC,
+    DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL,
+    DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER,
+    DOCTYPE_STATE_INT_NOTATION_AFTER,
+    DOCTYPE_STATE_INT_ENTITY_START,
+    DOCTYPE_STATE_INT_ENTITY_NAME,
+    DOCTYPE_STATE_INT_ENTITY_VALUE,
+    DOCTYPE_STATE_INT_ENTITY_PUBLIC,
+    DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL,
+    DOCTYPE_STATE_INT_ENTITY_SYSTEM,
+    DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL,
+    DOCTYPE_STATE_INT_ENTITY_NDATA,
+    DOCTYPE_STATE_INT_ENTITY_AFTER,
+    DOCTYPE_STATE_AFTER_INT,
+    DOCTYPE_STATE_NULL
+} DoctypeState;
 
 typedef enum { XML_1_0, XML_1_1 } XmlVersion;
 
@@ -82,7 +122,7 @@ typedef struct {
     GDataInputStream  *datastream;
 
     ParserState    state;
-    gboolean       in_comment;
+    DoctypeState   doctype_state;
     int            linenum;
     int            colnum;
 
@@ -99,6 +139,10 @@ typedef struct {
     GHashTable    *cur_nshash;
     GHashTable    *cur_attrs;
     GString       *cur_text;
+    char          *decl_system;
+    char          *decl_public;
+    gboolean       decl_pedef;
+    char          *decl_ndata;
 } ParserContext;
 
 struct _AxingXmlParserPrivate {
@@ -127,6 +171,10 @@ struct _AxingXmlParserPrivate {
 
     char               **event_attrkeys;
     AttributeData      **event_attrvals;
+
+    char                *doctype;
+    char                *doctype_public;
+    char                *doctype_system;
 };
 
 static void      axing_xml_parser_init          (AxingXmlParser       *parser);
@@ -179,6 +227,16 @@ static void      context_read_line_cb           (GDataInputStream     *stream,
 static void      context_parse_xml_decl         (ParserContext        *context);
 static void      context_parse_line             (ParserContext        *context,
                                                  char                 *line);
+static void      context_parse_doctype          (ParserContext        *context,
+                                                 char                **line);
+static void      context_parse_doctype_element  (ParserContext        *context,
+                                                 char                **line);
+static void      context_parse_doctype_attlist  (ParserContext        *context,
+                                                 char                **line);
+static void      context_parse_doctype_notation (ParserContext        *context,
+                                                 char                **line);
+static void      context_parse_doctype_entity   (ParserContext        *context,
+                                                 char                **line);
 static void      context_parse_cdata            (ParserContext        *context,
                                                  char                **line);
 static void      context_parse_comment          (ParserContext        *context,
@@ -678,6 +736,8 @@ context_read_line_cb (GDataInputStream *stream,
 
 #define XML_IS_NAME_CHAR(c) (XML_IS_NAME_START_CHAR(c) || c == '-' || c == '.' || (c >= '0' && c <= '9') || c == 0xB7 || (c >= 0x300 && c <= 0x36F) || (c >= 0x203F && c <= 0x2040))
 
+#define XML_GET_NAME(line, namevar, context) { if (XML_IS_NAME_START_CHAR (g_utf8_get_char (*line))) { GString *name = g_string_new (NULL); char *next; gsize bytes; while (XML_IS_NAME_CHAR (g_utf8_get_char (*line))) { next = g_utf8_next_char (*line); bytes = next - *line; g_string_append_len (name, *line, bytes); *line = next; context->colnum += 1; } namevar = g_string_free (name, FALSE); } else { ERROR_SYNTAX(context); } }
+
 #define ERROR_SYNTAX(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_SYNTAX, "Syntax error at line %i, column %i.", context->linenum, context->colnum); goto error; }
 
 #define ERROR_DUPATTR(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_DUPATTR, "Duplicate attribute \"%s\" at line %i, column %i.", context->cur_attrname, context->attr_linenum, context->attr_colnum); goto error; }
@@ -736,7 +796,6 @@ context_parse_xml_decl (ParserContext *context)
 
     READ_TO_QUOTE (c, buf, bufsize, context, quot);
 
-    /* FIXME: Support for XML 1.1 */
     CHECK_BUFFER (c, 4, buf, bufsize, context);
     if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
         context->parser->priv->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
@@ -867,10 +926,16 @@ context_parse_line (ParserContext *context, char *line)
                 }
                 switch (c[1]) {
                 case '!':
-                    if (c[2] == '[')
+                    switch (c[2]) {
+                    case '[':
                         context_parse_cdata (context, &c);
-                    else
+                        break;
+                    case 'D':
+                        context_parse_doctype (context, &c);
+                        break;
+                    default:
                         context_parse_comment (context, &c);
+                    }
                     break;
                 case '?':
                     context_parse_instruction (context, &c);
@@ -905,6 +970,9 @@ context_parse_line (ParserContext *context, char *line)
         case PARSER_STATE_COMMENT:
             context_parse_comment (context, &c);
             break;
+        case PARSER_STATE_DOCTYPE:
+            context_parse_doctype (context, &c);
+            break;
         default:
             g_assert_not_reached ();
         }
@@ -916,6 +984,833 @@ context_parse_line (ParserContext *context, char *line)
         context->cur_text = g_string_new (NULL);
         g_string_append_c (context->cur_text, 0xA);
     }
+ error:
+    return;
+}
+
+static void
+context_parse_doctype (ParserContext  *context,
+                       char          **line)
+{
+    switch (context->state) {
+    case PARSER_STATE_START:
+    case PARSER_STATE_ROOT:
+        if (context->parser->priv->doctype != NULL) {
+            ERROR_SYNTAX(context);
+        }
+        if (!g_str_has_prefix (*line, "<!DOCTYPE")) {
+            ERROR_SYNTAX(context);
+        }
+        (*line) += 9; context->colnum += 9;
+        EAT_SPACES (*line, *line, -1, context);
+        context->state = PARSER_STATE_DOCTYPE;
+        context->doctype_state = DOCTYPE_STATE_START;
+        if ((*line)[0] == '\0')
+            return;
+        break;
+    case PARSER_STATE_DOCTYPE:
+        break;
+    default:
+        ERROR_SYNTAX(context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_START) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        XML_GET_NAME(line, context->parser->priv->doctype, context);
+        context->doctype_state = DOCTYPE_STATE_NAME;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_NAME) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '>') {
+            context->doctype_state = DOCTYPE_STATE_NULL;
+            context->state = PARSER_STATE_ROOT;
+            (*line)++; context->colnum++;
+            return;
+        }
+        else if ((*line)[0] == '[') {
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT;
+        }
+        else if (g_str_has_prefix (*line, "SYSTEM")) {
+            (*line) += 6; context->colnum += 6;
+            context->doctype_state = DOCTYPE_STATE_SYSTEM;
+        }
+        else if (g_str_has_prefix (*line, "PUBLIC")) {
+            (*line) += 6; context->colnum += 6;
+            context->doctype_state = DOCTYPE_STATE_PUBLIC;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_PUBLIC) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_PUBLIC_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_PUBLIC_VAL) {
+        while ((*line)[0] != '\0') {
+            char c = (*line)[0];
+            if (c == context->quotechar) {
+                context->parser->priv->doctype_public = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_SYSTEM;
+                (*line)++; context->colnum++;
+                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                    ERROR_SYNTAX(context);
+                break;
+            }
+            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+                  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
+                  c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
+                ERROR_SYNTAX(context);
+            }
+            g_string_append_c (context->cur_text, c);
+            (*line)++; context->colnum++;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_PUBLIC_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_SYSTEM) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_SYSTEM_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_SYSTEM_VAL) {
+        while ((*line)[0] != '\0') {
+            gunichar cp;
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == context->quotechar) {
+                context->parser->priv->doctype_system = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_EXTID;
+                (*line)++; context->colnum++;
+                break;
+            }
+            cp = g_utf8_get_char (*line);
+            if (!XML_IS_CHAR(cp, context)) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_SYSTEM_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_EXTID) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        switch ((*line)[0]) {
+        case '\0':
+            return;
+        case '[':
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT;
+            break;
+        case '>':
+            context->doctype_state = DOCTYPE_STATE_NULL;
+            context->state = PARSER_STATE_ROOT;
+            (*line)++; context->colnum++;
+            return;
+        default:
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0') {
+            return;
+        }
+        else if ((*line)[0] == ']') {
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_AFTER_INT;
+        }
+        else if ((*line)[0] == '%') {
+            ERROR_FIXME(context);
+        }
+        else if (g_str_has_prefix (*line, "<!ELEMENT")) {
+            context_parse_doctype_element (context, line);
+        }
+        else if (g_str_has_prefix (*line, "<!ATTLIST")) {
+            context_parse_doctype_attlist (context, line);
+        }
+        else if (g_str_has_prefix (*line, "<!ENTITY")) {
+            context_parse_doctype_entity (context, line);
+        }
+        else if (g_str_has_prefix (*line, "<!NOTATION")) {
+            context_parse_doctype_notation (context, line);
+        }
+        else if (g_str_has_prefix (*line, "<!--")) {
+            ERROR_FIXME(context);
+        }
+        else if (g_str_has_prefix (*line, "<?")) {
+            ERROR_FIXME(context);
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    switch (context->doctype_state) {
+    case DOCTYPE_STATE_INT_ELEMENT_START:
+    case DOCTYPE_STATE_INT_ELEMENT_NAME:
+    case DOCTYPE_STATE_INT_ELEMENT_VALUE:
+    case DOCTYPE_STATE_INT_ELEMENT_AFTER:
+        context_parse_doctype_element (context, line);
+        break;
+    case DOCTYPE_STATE_INT_ATTLIST_START:
+    case DOCTYPE_STATE_INT_ATTLIST_NAME:
+    case DOCTYPE_STATE_INT_ATTLIST_VALUE:
+    case DOCTYPE_STATE_INT_ATTLIST_QUOTE:
+    case DOCTYPE_STATE_INT_ATTLIST_AFTER:
+        context_parse_doctype_attlist (context, line);
+        break;
+    case DOCTYPE_STATE_INT_NOTATION_START:
+    case DOCTYPE_STATE_INT_NOTATION_NAME:
+    case DOCTYPE_STATE_INT_NOTATION_SYSTEM:
+    case DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL:
+    case DOCTYPE_STATE_INT_NOTATION_PUBLIC:
+    case DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL:
+    case DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER:
+    case DOCTYPE_STATE_INT_NOTATION_AFTER:
+        context_parse_doctype_notation (context, line);
+        break;
+    case DOCTYPE_STATE_INT_ENTITY_START:
+    case DOCTYPE_STATE_INT_ENTITY_NAME:
+    case DOCTYPE_STATE_INT_ENTITY_VALUE:
+    case DOCTYPE_STATE_INT_ENTITY_PUBLIC:
+    case DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL:
+    case DOCTYPE_STATE_INT_ENTITY_SYSTEM:
+    case DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL:
+    case DOCTYPE_STATE_INT_ENTITY_NDATA:
+    case DOCTYPE_STATE_INT_ENTITY_AFTER:
+        context_parse_doctype_entity (context, line);
+        break;
+    default:
+        break;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_AFTER_INT) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] != '>')
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_NULL;
+        context->state = PARSER_STATE_ROOT;
+        (*line)++; context->colnum++;
+        return;
+    }
+
+ error:
+    return;
+}
+
+static void
+context_parse_doctype_element (ParserContext *context, char **line) {
+    if (context->doctype_state == DOCTYPE_STATE_INT) {
+        g_assert (g_str_has_prefix(*line, "<!ELEMENT"));
+        (*line) += 9; context->colnum += 9;
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_START;
+        EAT_SPACES (*line, *line, -1, context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_START) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        XML_GET_NAME(line, context->cur_qname, context);
+        context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_NAME;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_NAME) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if (g_str_has_prefix (*line, "EMPTY")) {
+            context->cur_text = g_string_new ("EMPTY");
+            (*line) += 5; context->colnum += 5;
+            context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
+        }
+        else if (g_str_has_prefix (*line, "ANY")) {
+            context->cur_text = g_string_new ("ANY");
+            (*line) += 3; context->colnum += 3;
+            context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
+        }
+        else if ((*line)[0] == '(') {
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            g_string_append_c (context->cur_text, '(');
+            context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_VALUE;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_VALUE) {
+        /* not checking the internal syntax here; valid chars only */
+        while ((*line)[0] != '\0' && (*line)[0] != '>') {
+            char *next;
+            gsize bytes;
+            if (!(XML_IS_NAME_CHAR (g_utf8_get_char (*line)) ||
+                  XML_IS_SPACE ((*line)[0]) ||
+                  (*line)[0] == '(' || (*line)[0] == ')' || (*line)[0] == '|' ||
+                  (*line)[0] == ',' || (*line)[0] == '+' || (*line)[0] == '*' ||
+                  (*line)[0] == '?' || (*line)[0] == '#' )) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if ((*line)[0] == '\0')
+            g_string_append_c (context->cur_text, 0xA);
+        if ((*line)[0] == '>')
+            context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_AFTER) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] != '>')
+            ERROR_SYNTAX(context);
+        /* FIXME: do stuff with these */
+        g_free (context->cur_qname);
+        context->cur_qname = NULL;
+        g_string_free (context->cur_text, TRUE);
+        context->cur_text = NULL;
+        (*line)++; context->colnum++;
+        context->doctype_state = DOCTYPE_STATE_INT;
+    }
+ error:
+    return;
+}
+
+static void
+context_parse_doctype_attlist (ParserContext *context, char **line) {
+    if (context->doctype_state == DOCTYPE_STATE_INT) {
+        g_assert (g_str_has_prefix(*line, "<!ATTLIST"));
+        (*line) += 9; context->colnum += 9;
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_START;
+        EAT_SPACES (*line, *line, -1, context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_START) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        XML_GET_NAME(line, context->cur_qname, context);
+        context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_NAME;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_NAME) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if (XML_IS_NAME_START_CHAR (g_utf8_get_char (*line))) {
+            context->cur_text = g_string_new (NULL);
+            context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_VALUE;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_VALUE) {
+        /* not checking the internal syntax here; valid chars only */
+        while ((*line)[0] != '\0' && (*line)[0] != '>') {
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == '"') {
+                g_string_append_c (context->cur_text, '"');
+                (*line)++; context->colnum++;
+                context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_QUOTE;
+                break;
+            }
+            if (!(XML_IS_NAME_CHAR (g_utf8_get_char (*line)) ||
+                  XML_IS_SPACE ((*line)[0]) ||
+                  (*line)[0] == '#' || (*line)[0] == '|' ||
+                  (*line)[0] == '(' || (*line)[0] == ')' )) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if ((*line)[0] == '\0')
+            g_string_append_c (context->cur_text, 0xA);
+        if ((*line)[0] == '>')
+            context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_AFTER;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_QUOTE) {
+        while ((*line)[0] != '\0') {
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == '"') {
+                g_string_append_c (context->cur_text, '"');
+                (*line)++; context->colnum++;
+                context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_VALUE;
+                break;
+            }
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if ((*line)[0] == '\0')
+            g_string_append_c (context->cur_text, 0xA);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_AFTER) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] != '>')
+            ERROR_SYNTAX(context);
+        /* FIXME: do stuff with these */
+        g_free (context->cur_qname);
+        context->cur_qname = NULL;
+        g_string_free (context->cur_text, TRUE);
+        context->cur_text = NULL;
+        (*line)++; context->colnum++;
+        context->doctype_state = DOCTYPE_STATE_INT;
+    }
+
+ error:
+    return;
+}
+
+static void
+context_parse_doctype_notation (ParserContext *context, char **line) {
+    if (context->doctype_state == DOCTYPE_STATE_INT) {
+        g_assert (g_str_has_prefix(*line, "<!NOTATION"));
+        (*line) += 10; context->colnum += 10;
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_INT_NOTATION_START;
+        EAT_SPACES (*line, *line, -1, context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_START) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        XML_GET_NAME(line, context->cur_qname, context);
+        context->doctype_state = DOCTYPE_STATE_INT_NOTATION_NAME;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_NAME) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if (g_str_has_prefix (*line, "SYSTEM")) {
+            (*line) += 6; context->colnum += 6;
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM;
+        }
+        else if (g_str_has_prefix (*line, "PUBLIC")) {
+            (*line) += 6; context->colnum += 6;
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
+        EAT_SPACES (*line, *line, -1, context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_SYSTEM) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '"' || (*line)[0] == '\'') {
+            context->quotechar = (*line)[0];
+            (*line)++; context->colnum++;
+            context->cur_text = g_string_new (NULL);
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL) {
+        while ((*line)[0] != '\0') {
+            gunichar cp;
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == context->quotechar) {
+                context->decl_system = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_INT_NOTATION_AFTER;
+                (*line)++; context->colnum++;
+                break;
+            }
+            cp = g_utf8_get_char (*line);
+            if (!XML_IS_CHAR(cp, context)) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL) {
+        while ((*line)[0] != '\0') {
+            char c = (*line)[0];
+            if (c == context->quotechar) {
+                context->decl_public = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER;
+                (*line)++; context->colnum++;
+                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0' || (*line)[0] == '>'))
+                    ERROR_SYNTAX(context);
+                break;
+            }
+            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+                  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
+                  c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
+                ERROR_SYNTAX(context);
+            }
+            g_string_append_c (context->cur_text, c);
+            (*line)++; context->colnum++;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL;
+        }
+        else if ((*line)[0] == '>') {
+            context->doctype_state = DOCTYPE_STATE_INT_NOTATION_AFTER;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_AFTER) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] != '>')
+            ERROR_SYNTAX(context);
+        /* FIXME: do stuff with these */
+        g_free (context->cur_qname);
+        context->cur_qname = NULL;
+        if (context->decl_system) {
+            g_free (context->decl_system);
+            context->decl_system = NULL;
+        }
+        if (context->decl_public) {
+            g_free (context->decl_public);
+            context->decl_public = NULL;
+        }
+        (*line)++; context->colnum++;
+        context->doctype_state = DOCTYPE_STATE_INT;
+    }
+
+ error:
+    return;
+}
+
+static void
+context_parse_doctype_entity (ParserContext *context, char **line) {
+    if (context->doctype_state == DOCTYPE_STATE_INT) {
+        g_assert (g_str_has_prefix(*line, "<!ENTITY"));
+        (*line) += 8; context->colnum += 8;
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_INT_ENTITY_START;
+        context->decl_pedef = FALSE;
+        EAT_SPACES (*line, *line, -1, context);
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_START) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '%') {
+            /* if already true, we've seen a % in this decl */
+            if (context->decl_pedef)
+                ERROR_SYNTAX(context);
+            context->decl_pedef = TRUE;
+            (*line)++; context->colnum++;
+            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                ERROR_SYNTAX(context);
+            EAT_SPACES (*line, *line, -1, context);
+            if ((*line)[0] == '\0')
+                return;
+        }
+        XML_GET_NAME(line, context->cur_qname, context);
+        context->doctype_state = DOCTYPE_STATE_INT_ENTITY_NAME;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_NAME) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if (g_str_has_prefix (*line, "SYSTEM")) {
+            (*line) += 6; context->colnum += 6;
+            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                ERROR_SYNTAX(context);
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
+            EAT_SPACES (*line, *line, -1, context);
+        }
+        else if (g_str_has_prefix (*line, "PUBLIC")) {
+            (*line) += 6; context->colnum += 6;
+            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                ERROR_SYNTAX(context);
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_PUBLIC;
+            EAT_SPACES (*line, *line, -1, context);
+        }
+        else if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_VALUE;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_VALUE) {
+        while ((*line)[0] != '\0') {
+            gunichar cp;
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == context->quotechar) {
+                /* let the AFTER handler handle cur_text */
+                context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
+                (*line)++; context->colnum++;
+                break;
+            }
+            cp = g_utf8_get_char (*line);
+            if (!XML_IS_CHAR(cp, context)) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_VALUE && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_PUBLIC) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL) {
+        while ((*line)[0] != '\0') {
+            char c = (*line)[0];
+            if (c == context->quotechar) {
+                context->decl_public = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
+                (*line)++; context->colnum++;
+                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                    ERROR_SYNTAX(context);
+                break;
+            }
+            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+                  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
+                  c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
+                ERROR_SYNTAX(context);
+            }
+            g_string_append_c (context->cur_text, c);
+            (*line)++; context->colnum++;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_SYSTEM) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if ((*line)[0] == '\'' || (*line)[0] == '"') {
+            context->quotechar = (*line)[0];
+            context->cur_text = g_string_new (NULL);
+            (*line)++; context->colnum++;
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL) {
+        while ((*line)[0] != '\0') {
+            gunichar cp;
+            char *next;
+            gsize bytes;
+            if ((*line)[0] == context->quotechar) {
+                context->decl_system = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
+                (*line)++; context->colnum++;
+                break;
+            }
+            cp = g_utf8_get_char (*line);
+            if (!XML_IS_CHAR(cp, context)) {
+                ERROR_SYNTAX(context);
+            }
+            next = g_utf8_next_char (*line);
+            bytes = next - *line;
+            g_string_append_len (context->cur_text, *line, bytes);
+            *line = next; context->colnum += 1;
+        }
+        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL && (*line)[0] == '\0') {
+            g_string_append_c (context->cur_text, 0xA);
+        }
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_NDATA) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        XML_GET_NAME(line, context->decl_ndata, context);
+        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0' || (*line)[0] == '>'))
+            ERROR_SYNTAX(context);
+        context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
+    }
+
+    if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_AFTER) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        if (g_str_has_prefix (*line, "NDATA")) {
+            if (context->cur_text != NULL    || /* not after an EntityValue */
+                context->decl_system == NULL || /* only after PUBLIC or SYSTEM */
+                context->decl_pedef == TRUE  || /* no NDATA on param entities */
+                context->decl_ndata != NULL  )  /* only one NDATA */
+                ERROR_SYNTAX(context);
+            (*line) += 5; context->colnum += 5;
+            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                ERROR_SYNTAX(context);
+            context->doctype_state = DOCTYPE_STATE_INT_ENTITY_NDATA;
+            return;
+        }
+        if ((*line)[0] != '>')
+            ERROR_SYNTAX(context);
+        /* FIXME: do stuff with these */
+        g_free (context->cur_qname);
+        context->cur_qname = NULL;
+        if (context->cur_text) {
+            g_string_free (context->cur_text, TRUE);
+            context->cur_text = NULL;
+        }
+        if (context->decl_system) {
+            g_free (context->decl_system);
+            context->decl_system = NULL;
+        }
+        if (context->decl_public) {
+            g_free (context->decl_public);
+            context->decl_public = NULL;
+        }
+        if (context->decl_ndata) {
+            g_free (context->decl_ndata);
+            context->decl_ndata = NULL;
+        }
+        (*line)++; context->colnum++;
+        context->doctype_state = DOCTYPE_STATE_INT;
+    }
+
  error:
     return;
 }
@@ -1404,6 +2299,7 @@ context_parse_entity (ParserContext *context, char **line)
             }
             if ((*line)[0] != ';')
                 ERROR_ENTITY(context);
+            (*line)++; colnum++;
         }
         else {
             while ((*line)[0] != '\0') {
@@ -1417,6 +2313,7 @@ context_parse_entity (ParserContext *context, char **line)
             }
             if ((*line)[0] != ';')
                 ERROR_ENTITY(context);
+            (*line)++; colnum++;
         }
         if (XML_IS_CHAR(cp, context) || XML_IS_CHAR_RESTRICTED(cp, context)) {
             g_string_append_unichar (curstr, cp);
