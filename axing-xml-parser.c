@@ -20,6 +20,7 @@
  * Author: Shaun McCance  <shaunm@gnome.org>
  */
 
+#include "axing-dtd-schema.h"
 #include "axing-namespace-map.h"
 #include "axing-private.h"
 #include "axing-resource.h"
@@ -172,9 +173,7 @@ struct _AxingXmlParserPrivate {
     char               **event_attrkeys;
     AttributeData      **event_attrvals;
 
-    char                *doctype;
-    char                *doctype_public;
-    char                *doctype_system;
+    AxingDtdSchema      *doctype;
 };
 
 static void      axing_xml_parser_init          (AxingXmlParser       *parser);
@@ -1015,10 +1014,14 @@ context_parse_doctype (ParserContext  *context,
     }
 
     if (context->doctype_state == DOCTYPE_STATE_START) {
+        char *doctype;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '\0')
             return;
-        XML_GET_NAME(line, context->parser->priv->doctype, context);
+        XML_GET_NAME(line, doctype, context);
+        context->parser->priv->doctype = axing_dtd_schema_new ();
+        axing_dtd_schema_set_doctype (context->parser->priv->doctype, doctype);
+        g_free (doctype);
         context->doctype_state = DOCTYPE_STATE_NAME;
     }
 
@@ -1068,8 +1071,10 @@ context_parse_doctype (ParserContext  *context,
         while ((*line)[0] != '\0') {
             char c = (*line)[0];
             if (c == context->quotechar) {
-                context->parser->priv->doctype_public = g_string_free (context->cur_text, FALSE);
+                char *public = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
+                axing_dtd_schema_set_public_id (context->parser->priv->doctype, public);
+                g_free (public);
                 context->doctype_state = DOCTYPE_STATE_SYSTEM;
                 (*line)++; context->colnum++;
                 if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
@@ -1111,8 +1116,10 @@ context_parse_doctype (ParserContext  *context,
             char *next;
             gsize bytes;
             if ((*line)[0] == context->quotechar) {
-                context->parser->priv->doctype_system = g_string_free (context->cur_text, FALSE);
+                char *system = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
+                axing_dtd_schema_set_system_id (context->parser->priv->doctype, system);
+                g_free (system);
                 context->doctype_state = DOCTYPE_STATE_EXTID;
                 (*line)++; context->colnum++;
                 break;
@@ -1310,16 +1317,21 @@ context_parse_doctype_element (ParserContext *context, char **line) {
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_AFTER) {
+        char *value;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '\0')
             return;
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
-        /* FIXME: do stuff with these */
+        value = g_string_free (context->cur_text, FALSE);
+        context->cur_text = NULL;
+        axing_dtd_schema_add_element (context->parser->priv->doctype,
+                                      context->cur_qname,
+                                      value,
+                                      &(context->parser->priv->error));
+        g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
-        g_string_free (context->cur_text, TRUE);
-        context->cur_text = NULL;
         (*line)++; context->colnum++;
         context->doctype_state = DOCTYPE_STATE_INT;
     }
@@ -1410,16 +1422,21 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_AFTER) {
+        char *value;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '\0')
             return;
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
-        /* FIXME: do stuff with these */
+        value = g_string_free (context->cur_text, FALSE);
+        context->cur_text = NULL;
+        axing_dtd_schema_add_attlist (context->parser->priv->doctype,
+                                      context->cur_qname,
+                                      value,
+                                      &(context->parser->priv->error));
+        g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
-        g_string_free (context->cur_text, TRUE);
-        context->cur_text = NULL;
         (*line)++; context->colnum++;
         context->doctype_state = DOCTYPE_STATE_INT;
     }
@@ -1573,7 +1590,10 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
             return;
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
-        /* FIXME: do stuff with these */
+        axing_dtd_schema_add_notation (context->parser->priv->doctype,
+                                       context->cur_qname,
+                                       context->decl_public,
+                                       context->decl_system);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         if (context->decl_system) {
@@ -1788,7 +1808,45 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
         }
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
-        /* FIXME: do stuff with these */
+        if (context->decl_pedef) {
+            if (context->cur_text) {
+                char *value = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                axing_dtd_schema_add_parameter (context->parser->priv->doctype,
+                                                context->cur_qname,
+                                                value);
+                g_free (value);
+            }
+            else {
+                axing_dtd_schema_add_external_parameter (context->parser->priv->doctype,
+                                                         context->cur_qname,
+                                                         context->decl_public,
+                                                         context->decl_system);
+            }
+        }
+        else {
+            if (context->cur_text) {
+                char *value = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                axing_dtd_schema_add_entity (context->parser->priv->doctype,
+                                             context->cur_qname,
+                                             value);
+                g_free (value);
+            }
+            else if (context->decl_ndata) {
+                axing_dtd_schema_add_unparsed_entity (context->parser->priv->doctype,
+                                                      context->cur_qname,
+                                                      context->decl_public,
+                                                      context->decl_system,
+                                                      context->decl_ndata);
+            }
+            else {
+                axing_dtd_schema_add_external_entity (context->parser->priv->doctype,
+                                                      context->cur_qname,
+                                                      context->decl_public,
+                                                      context->decl_system);
+            }
+        }
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         if (context->cur_text) {
