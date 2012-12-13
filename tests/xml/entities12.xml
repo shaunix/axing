@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!ENTITY nl "&#xA;">
+]>
+<doc>&nl;</doc>

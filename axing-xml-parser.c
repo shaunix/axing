@@ -226,6 +226,8 @@ static void      context_read_line_cb           (GDataInputStream     *stream,
 static void      context_parse_xml_decl         (ParserContext        *context);
 static void      context_parse_line             (ParserContext        *context,
                                                  char                 *line);
+static void      context_parse_data             (ParserContext        *context,
+                                                 char                 *line);
 static void      context_parse_doctype          (ParserContext        *context,
                                                  char                **line);
 static void      context_parse_doctype_element  (ParserContext        *context,
@@ -253,6 +255,7 @@ static void      context_parse_entity           (ParserContext        *context,
 static void      context_parse_text             (ParserContext        *context,
                                                  char                **line);
 static void      context_trigger_start_element  (ParserContext        *context);
+static void      context_free                   (ParserContext        *context);
 
 
 enum {
@@ -896,18 +899,30 @@ context_parse_xml_decl (ParserContext *context)
 static void
 context_parse_line (ParserContext *context, char *line)
 {
-    char *c = line;
-
     if (line[0] == '\0' && context->cur_text != NULL) {
         g_string_append_c (context->cur_text, 0xA);
         return;
     }
+    context_parse_data (context, line);
+    if (context->state == PARSER_STATE_TEXT) {
+        if (context->cur_text == NULL)
+            context->cur_text = g_string_new (NULL);
+        g_string_append_c (context->cur_text, 0xA);
+    }
+}
+
+static void
+context_parse_data (ParserContext *context, char *line)
+{
+    char *c = line;
     while (c[0] != '\0') {
         switch (context->state) {
         case PARSER_STATE_START:
         case PARSER_STATE_ROOT:
         case PARSER_STATE_TEXT:
             if (context->state == PARSER_STATE_TEXT && context->parser->priv->event_stack->len == 0) {
+                g_string_free (context->cur_text, TRUE);
+                context->cur_text = NULL;
                 context->state = PARSER_STATE_ROOT;
             }
             if (context->state != PARSER_STATE_TEXT) {
@@ -978,10 +993,6 @@ context_parse_line (ParserContext *context, char *line)
         if (context->parser->priv->error != NULL) {
             return;
         }
-    }
-    if (context->state == PARSER_STATE_TEXT && context->cur_text == NULL) {
-        context->cur_text = g_string_new (NULL);
-        g_string_append_c (context->cur_text, 0xA);
     }
  error:
     return;
@@ -1192,6 +1203,7 @@ context_parse_doctype (ParserContext  *context,
         else {
             ERROR_SYNTAX(context);
         }
+        return;
     }
 
     switch (context->doctype_state) {
@@ -1912,12 +1924,8 @@ context_parse_cdata (ParserContext *context, char **line)
         *line = next; context->colnum += 1;
     }
 
-    if ((*line)[0] == '\0') {
-        if (context->cur_text == NULL) {
-            context->cur_text = g_string_new (NULL);
-        }
+    if ((*line)[0] == '\0')
         g_string_append_c (context->cur_text, 0xA);
-    }
 
  error:
     return;
@@ -1965,12 +1973,8 @@ context_parse_comment (ParserContext *context, char **line)
         *line = next; context->colnum += 1;
     }
 
-    if ((*line)[0] == '\0') {
-        if (context->cur_text == NULL) {
-            context->cur_text = g_string_new (NULL);
-        }
+    if ((*line)[0] == '\0')
         g_string_append_c (context->cur_text, 0xA);
-    }
 
  error:
     return;
@@ -2416,8 +2420,24 @@ context_parse_entity (ParserContext *context, char **line)
         else if (g_str_equal (entname, "quot"))
             g_string_append_c (curstr, '"');
         else {
-            /* FIXME: can't do this right until I start parsing DOCTYPE */
-            ERROR_FIXME(context);
+            char *value = axing_dtd_schema_get_entity (context->parser->priv->doctype, entname);
+            if (value) {
+                ParserContext *entctxt = g_new0 (ParserContext, 1);
+                entctxt->state = context->state;
+                entctxt->linenum = 0;
+                entctxt->colnum = 1;
+                entctxt->parser = g_object_ref (context->parser);
+                entctxt->cur_text = context->cur_text;
+                context->cur_text = NULL;
+                context_parse_data (entctxt, value);
+                context->state = entctxt->state;
+                context->cur_text = entctxt->cur_text;
+                entctxt->cur_text = NULL;
+                context_free (entctxt);
+            }
+            else {
+                ERROR_FIXME(context);
+            }
         }
     }
  error:
@@ -2460,12 +2480,6 @@ context_parse_text (ParserContext *context, char **line)
         /* FIXME: newlines */
         g_string_append_len (context->cur_text, *line, bytes);
         *line = next; context->colnum += 1;
-    }
-    if ((*line)[0] == '\0') {
-        if (context->cur_text == NULL) {
-            context->cur_text = g_string_new (NULL);
-        }
-        g_string_append_c (context->cur_text, 0xA);
     }
  error:
     return;
@@ -2600,4 +2614,35 @@ context_trigger_start_element (ParserContext *context)
 
  error:
     parser_clean_event_data (context->parser);
+}
+
+static void
+context_free (ParserContext *context)
+{
+    if (context->parser)
+        g_object_unref (context->parser);
+    if (context->file)
+        g_object_unref (context->file);
+    if (context->srcstream)
+        g_object_unref (context->srcstream);
+    if (context->datastream)
+        g_object_unref (context->datastream);
+
+    g_free (context->cur_qname);
+    g_free (context->cur_attrname);
+
+    if (context->cur_attrval)
+        g_string_free (context->cur_attrval, TRUE);
+    if (context->cur_nshash)
+        g_hash_table_destroy (context->cur_nshash);
+    if (context->cur_attrs)
+        g_hash_table_destroy (context->cur_attrs);
+    if (context->cur_text)
+        g_string_free (context->cur_text, TRUE);
+
+    g_free (context->decl_system);
+    g_free (context->decl_public);
+    g_free (context->decl_ndata);
+
+    g_free (context);
 }

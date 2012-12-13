@@ -1,4 +1,4 @@
 [ doc |doc ()
-  @ foo:bar foo|bar (http://example.com/) 73feffa4b7f6bb68e44cf984c85f6e88
+  @ foo:bar foo|bar (http://example.com/) baz
 ] doc |doc ()
 finish

@@ -161,9 +161,9 @@ axing_dtd_schema_add_attlist (AxingDtdSchema *dtd,
 
 
 gboolean
-axing_dtd_schema_add_entity (AxingDtdSchema   *dtd,
-                             const char       *name,
-                             const char       *value)
+axing_dtd_schema_add_entity (AxingDtdSchema *dtd,
+                             const char     *name,
+                             const char     *value)
 {
     EntityData *data;
 
@@ -293,4 +293,20 @@ axing_dtd_schema_add_notation (AxingDtdSchema *dtd,
 
     g_hash_table_insert (dtd->priv->notations, data->name, data);
     return TRUE;
+}
+
+char *
+axing_dtd_schema_get_entity (AxingDtdSchema *dtd,
+                             const char     *name)
+{
+    EntityData *data;
+
+    g_return_val_if_fail (dtd && AXING_IS_DTD_SCHEMA (dtd), FALSE);
+
+    data = (EntityData *) g_hash_table_lookup (dtd->priv->general_entities, name);
+
+    if (data == NULL)
+        return NULL;
+
+    return g_strdup (data->value);
 }

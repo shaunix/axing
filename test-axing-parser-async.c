@@ -13,7 +13,7 @@ stream_event (AxingStream *stream,
               gpointer     data)
 {
   char **attrs;
-  gchar *checksum;
+  gchar *encval;
   int i;
   switch (axing_stream_get_event_type (stream)) {
   case AXING_STREAM_EVENT_START_ELEMENT:
@@ -27,16 +27,15 @@ stream_event (AxingStream *stream,
     attrs = (char **) axing_stream_get_attributes (stream);
     while ((*attrs) != NULL) {
       for (i = 0; i < indent; i++) g_print ("  ");
-      checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
-                                                axing_stream_get_attribute_value (stream, *attrs, NULL),
-                                                -1);
+      encval = g_uri_escape_string (axing_stream_get_attribute_value (stream, *attrs, NULL),
+                                    NULL, TRUE);
       g_print ("@ %s %s|%s (%s) %s\n",
                *attrs,
                axing_stream_get_attribute_prefix (stream, *attrs),
                axing_stream_get_attribute_localname (stream, *attrs),
                axing_stream_get_attribute_namespace (stream, *attrs),
-               checksum);
-      g_free (checksum);
+               encval);
+      g_free (encval);
       attrs++;
     }
     break;
@@ -51,24 +50,24 @@ stream_event (AxingStream *stream,
     break;
   case AXING_STREAM_EVENT_CONTENT:
     for (i = 0; i < indent; i++) g_print ("  ");
-    checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
-                                              axing_stream_get_event_content (stream), -1);
-    g_print ("# %s\n", checksum);
-    g_free (checksum);
+    encval = g_uri_escape_string (axing_stream_get_event_content (stream),
+                                  NULL, TRUE);
+    g_print ("# %s\n", encval);
+    g_free (encval);
     break;
   case AXING_STREAM_EVENT_CDATA:
     for (i = 0; i < indent; i++) g_print ("  ");
-    checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
-                                              axing_stream_get_event_content (stream), -1);
-    g_print ("* %s\n", checksum);
-    g_free (checksum);
+    encval = g_uri_escape_string (axing_stream_get_event_content (stream),
+                                  NULL, TRUE);
+    g_print ("* %s\n", encval);
+    g_free (encval);
     break;
   case AXING_STREAM_EVENT_COMMENT:
     for (i = 0; i < indent; i++) g_print ("  ");
-    checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5,
-                                              axing_stream_get_event_content (stream), -1);
-    g_print ("! %s\n", checksum);
-    g_free (checksum);
+    encval = g_uri_escape_string (axing_stream_get_event_content (stream),
+                                  NULL, TRUE);
+    g_print ("! %s\n", encval);
+    g_free (encval);
     break;
   default:
     g_print ("event\n");

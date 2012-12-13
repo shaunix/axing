@@ -112,6 +112,9 @@ gboolean          axing_dtd_schema_add_notation             (AxingDtdSchema  *dt
                                                              const char      *public,
                                                              const char      *system);
 
+char *            axing_dtd_schema_get_entity               (AxingDtdSchema  *dtd,
+                                                             const char      *name);
+
 G_END_DECLS
 
 #endif /* __AXING_DTD_SCHEMA_H__ */

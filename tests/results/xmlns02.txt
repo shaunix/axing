@@ -1,10 +1,10 @@
 [ doc |doc ()
-  # f67be96ce768fb5b40aecf0438f97886
+  # %0A%20%20
   [ foo:a foo|a (http://example.com/)
   ] foo:a foo|a (http://example.com/)
-  # f67be96ce768fb5b40aecf0438f97886
+  # %0A%20%20
   [ b |b ()
   ] b |b ()
-  # 68b329da9893e34099c7d8ad5cb9c940
+  # %0A
 ] doc |doc ()
 finish

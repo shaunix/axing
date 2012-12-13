@@ -1,5 +1,5 @@
 [ doc |doc ()
-  # 68b329da9893e34099c7d8ad5cb9c940
+  # %0A
   [ a |a ()
-    # 68b329da9893e34099c7d8ad5cb9c940
+    # %0A
 error: Incorrect end tag "doc" at line 3, column 1.

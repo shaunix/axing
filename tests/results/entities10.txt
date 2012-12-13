@@ -1,4 +1,4 @@
-! %0A%0Acomment%201%0A%20%20%0A
 [ doc |doc ()
+  # ∴
 ] doc |doc ()
 finish
