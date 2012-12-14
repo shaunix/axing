@@ -6,4 +6,4 @@
   ] a |a ()
   # %0A
   [ wrong |wrong ()
-error: Incorrect entity reference at line 3, column 8.
+error: entities09.xml:3:8:Incorrect entity reference.

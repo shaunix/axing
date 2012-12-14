@@ -1,3 +1,3 @@
 [ doc |doc ()
   # %0A
-error: Invalid namespace for prefix "wrong" at line 2, column 4.
+error: xmlns07.xml:2:4:Invalid namespace for prefix "wrong".

@@ -2,4 +2,4 @@
   # %0A
   [ a |a ()
     # %0A
-error: Incorrect end tag "doc" at line 3, column 1.
+error: element04.xml:3:1:Incorrect end tag "doc".

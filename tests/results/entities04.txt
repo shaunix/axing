@@ -1,2 +1,2 @@
 [ doc |doc ()
-error: Incorrect entity reference at line 1, column 6.
+error: entities04.xml:1:6:Incorrect entity reference.

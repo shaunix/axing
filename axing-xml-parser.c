@@ -118,9 +118,11 @@ attribute_data_free (AttributeData *data) {
 
 typedef struct {
     AxingXmlParser    *parser;
-    GFile             *file;
     GInputStream      *srcstream;
     GDataInputStream  *datastream;
+    char              *basename;
+    char              *entname;
+    char              *showname;
 
     ParserState    state;
     DoctypeState   doctype_state;
@@ -597,12 +599,15 @@ stream_get_attribute_value (AxingStream *stream,
 }
 
 void
-axing_xml_parser_parse_async (AxingXmlParser         *parser,
+axing_xml_parser_parse_async (AxingXmlParser      *parser,
                               GCancellable        *cancellable,
                               GAsyncReadyCallback  callback,
                               gpointer             user_data)
 {
+    GFile *file;
     GInputStream *stream;
+    char *parsename;
+    const char *slash;
     g_return_if_fail (parser->priv->context->state == PARSER_STATE_NONE);
     parser->priv->context->state = PARSER_STATE_START;
 
@@ -613,9 +618,19 @@ axing_xml_parser_parse_async (AxingXmlParser         *parser,
                                                       callback, user_data,
                                                       axing_xml_parser_parse_async);
 
+    file = axing_resource_get_file (parser->priv->resource);
+    parsename = g_file_get_parse_name (file);
+    slash = strrchr (parsename, '/');
+    if (slash) {
+        parser->priv->context->basename = g_strdup (slash + 1);
+        g_free (parsename);
+    }
+    else {
+        parser->priv->context->basename = parsename;
+    }
+
     stream = axing_resource_get_input_stream (parser->priv->resource);
     if (stream == NULL) {
-        GFile *file = axing_resource_get_file (parser->priv->resource);
         g_file_read_async (file,
                            G_PRIORITY_DEFAULT,
                            parser->priv->cancellable,
@@ -640,6 +655,51 @@ axing_xml_parser_parse_finish (AxingXmlParser     *parser,
     if (parser->priv->error && error != NULL)
         *error = g_error_copy (parser->priv->error);
 }
+
+#define XML_IS_CHAR(c, context) ((context->parser->priv->xml_version == XML_1_1) ? (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0x7E) || c == 0x85 || (c  >= 0xA0 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)) : (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)))
+
+#define XML_IS_CHAR_RESTRICTED(c, context) ((context->parser->priv->xml_version == XML_1_1) && ((c >= 0x1 && c <= 0x8) || (c >= 0xB && c <= 0xC) || (c >= 0xE && c <= 0x1F) || (c >= 0x7F && c <= 0x84) || (c >= 0x86 && c <= 0x9F)))
+
+/* FIXME 1.1 newlines */
+#define XML_IS_SPACE(c) (c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A)
+
+#define XML_IS_NAME_START_CHAR(c) (c == ':' || (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z') || (c >= 0xC0 && c <= 0xD6) || (c >= 0xD8 && c <= 0xF6) || (c >= 0xF8 && c <= 0x2FF) || (c >= 0x370 && c <= 0x37D) || (c >= 0x37F && c <= 0x1FFF) || (c >= 0x200C && c <= 0x200D) || (c >= 0x2070 && c <= 0x218F) || (c >= 0x2C00 && c <= 0x2FEF) || (c >= 0x3001 && c <= 0xD7FF) || (c >= 0xF900 && c <= 0xFDCF) || (c >= 0xFDF0 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0xEFFFF))
+
+#define XML_IS_NAME_CHAR(c) (XML_IS_NAME_START_CHAR(c) || c == '-' || c == '.' || (c >= '0' && c <= '9') || c == 0xB7 || (c >= 0x300 && c <= 0x36F) || (c >= 0x203F && c <= 0x2040))
+
+#define XML_GET_NAME(line, namevar, context) { if (XML_IS_NAME_START_CHAR (g_utf8_get_char (*line))) { GString *name = g_string_new (NULL); char *next; gsize bytes; while (XML_IS_NAME_CHAR (g_utf8_get_char (*line))) { next = g_utf8_next_char (*line); bytes = next - *line; g_string_append_len (name, *line, bytes); *line = next; context->colnum += 1; } namevar = g_string_free (name, FALSE); } else { ERROR_SYNTAX(context); } }
+
+#define ERROR_SYNTAX(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_SYNTAX, "%s:%i:%i:Syntax error.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+
+#define ERROR_DUPATTR(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_DUPATTR, "%s:%i:%i:Duplicate attribute \"%s\".", context->showname ? context->showname : context->basename, context->attr_linenum, context->attr_colnum, context->cur_attrname); goto error; }
+
+#define ERROR_MISSINGEND(context, qname) { context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_MISSINGEND, "%s:%i:%i:Missing end tag for \"%s\".", context->showname ? context->showname : context->basename, context->linenum, context->colnum, qname); goto error; }
+
+#define ERROR_WRONGEND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_WRONGEND, "%s:%i:%i:Incorrect end tag \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_qname); goto error; }
+
+#define ERROR_ENTITY(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_ENTITY, "%s:%i:%i:Incorrect entity reference.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+
+#define ERROR_NS_QNAME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "%s:%i:%i:Could not parse QName \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_qname); goto error; }
+
+#define ERROR_NS_QNAME_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "%s:%i:%i:Could not parse QName \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->qname); goto error; }
+
+#define ERROR_NS_NOTFOUND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "%s:%i:%i:Could not find namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_prefix); goto error; }
+
+#define ERROR_NS_NOTFOUND_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "%s:%i:%i:Could not find namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->prefix); goto error; }
+
+#define ERROR_NS_DUPATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, "%s:%i:%i:Duplicate expanded name for attribute \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->qname); goto error; }
+
+#define ERROR_NS_INVALID(context, prefix) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, "%s:%i:%i:Invalid namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, context->attr_linenum, context->attr_colnum, prefix); goto error; }
+
+#define ERROR_FIXME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "%s:%i:%i:Unsupported feature.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+
+/* FIXME: XML 1.1 newlines */
+#define EAT_SPACES(c, buf, bufsize, context) {gboolean aftercr = FALSE; while((bufsize < 0 || c - buf < bufsize) && XML_IS_SPACE(c[0])) {if (c[0] == 0x0D) { context->colnum = 1; context->linenum++; aftercr = TRUE; } else if (c[0] == 0x0A) { if (!aftercr) { context->colnum = 1; context->linenum++; } aftercr = FALSE; } else { context->colnum++; aftercr = FALSE; } (c)++; }}
+
+#define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
+
+#define READ_TO_QUOTE(c, buf, bufsize, context, quot) EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '=') { ERROR_SYNTAX(context); } c += 1; context->colnum += 1; EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '"' && c[0] != '\'') { ERROR_SYNTAX(context); } quot = c[0]; c += 1; context->colnum += 1;
+
 
 static void
 context_file_read_cb (GFile         *file,
@@ -706,10 +766,8 @@ context_read_line_cb (GDataInputStream *stream,
             ParserStackFrame frame = g_array_index (context->parser->priv->event_stack,
                                                     ParserStackFrame,
                                                     context->parser->priv->event_stack->len - 1);
-            context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR,
-                                                        AXING_XML_PARSER_ERROR_MISSINGEND,
-                                                        "Missing end tag for \"%s\" at line %i, column %i.",
-                                                        frame.qname, context->linenum, context->colnum);
+            ERROR_MISSINGEND(context, frame.qname);
+        error:
             g_simple_async_result_complete (context->parser->priv->result);
             return;
         }
@@ -727,50 +785,6 @@ context_read_line_cb (GDataInputStream *stream,
                                          (GAsyncReadyCallback) context_read_line_cb,
                                          context);
 }
-
-
-#define XML_IS_CHAR(c, context) ((context->parser->priv->xml_version == XML_1_1) ? (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0x7E) || c == 0x85 || (c  >= 0xA0 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)) : (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)))
-
-#define XML_IS_CHAR_RESTRICTED(c, context) ((context->parser->priv->xml_version == XML_1_1) && ((c >= 0x1 && c <= 0x8) || (c >= 0xB && c <= 0xC) || (c >= 0xE && c <= 0x1F) || (c >= 0x7F && c <= 0x84) || (c >= 0x86 && c <= 0x9F)))
-
-/* FIXME 1.1 newlines */
-#define XML_IS_SPACE(c) (c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A)
-
-#define XML_IS_NAME_START_CHAR(c) (c == ':' || (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z') || (c >= 0xC0 && c <= 0xD6) || (c >= 0xD8 && c <= 0xF6) || (c >= 0xF8 && c <= 0x2FF) || (c >= 0x370 && c <= 0x37D) || (c >= 0x37F && c <= 0x1FFF) || (c >= 0x200C && c <= 0x200D) || (c >= 0x2070 && c <= 0x218F) || (c >= 0x2C00 && c <= 0x2FEF) || (c >= 0x3001 && c <= 0xD7FF) || (c >= 0xF900 && c <= 0xFDCF) || (c >= 0xFDF0 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0xEFFFF))
-
-#define XML_IS_NAME_CHAR(c) (XML_IS_NAME_START_CHAR(c) || c == '-' || c == '.' || (c >= '0' && c <= '9') || c == 0xB7 || (c >= 0x300 && c <= 0x36F) || (c >= 0x203F && c <= 0x2040))
-
-#define XML_GET_NAME(line, namevar, context) { if (XML_IS_NAME_START_CHAR (g_utf8_get_char (*line))) { GString *name = g_string_new (NULL); char *next; gsize bytes; while (XML_IS_NAME_CHAR (g_utf8_get_char (*line))) { next = g_utf8_next_char (*line); bytes = next - *line; g_string_append_len (name, *line, bytes); *line = next; context->colnum += 1; } namevar = g_string_free (name, FALSE); } else { ERROR_SYNTAX(context); } }
-
-#define ERROR_SYNTAX(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_SYNTAX, "Syntax error at line %i, column %i.", context->linenum, context->colnum); goto error; }
-
-#define ERROR_DUPATTR(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_DUPATTR, "Duplicate attribute \"%s\" at line %i, column %i.", context->cur_attrname, context->attr_linenum, context->attr_colnum); goto error; }
-
-#define ERROR_WRONGEND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_WRONGEND, "Incorrect end tag \"%s\" at line %i, column %i.", context->parser->priv->event_qname, context->node_linenum, context->node_colnum); goto error; }
-
-#define ERROR_ENTITY(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_ENTITY, "Incorrect entity reference at line %i, column %i.", context->linenum, context->colnum); goto error; }
-
-#define ERROR_NS_QNAME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "Could not parse QName \"%s\" at line %i, column %i.", context->parser->priv->event_qname, context->node_linenum, context->node_colnum); goto error; }
-
-#define ERROR_NS_QNAME_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "Could not parse QName \"%s\" at line %i, column %i.", data->qname, data->linenum, data->colnum); goto error; }
-
-#define ERROR_NS_NOTFOUND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", context->parser->priv->event_prefix, context->node_linenum, context->node_colnum); goto error; }
-
-#define ERROR_NS_NOTFOUND_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "Could not find namespace for prefix \"%s\" at line %i, column %i.", data->prefix, data->linenum, data->colnum); goto error; }
-
-#define ERROR_NS_DUPATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, "Duplicate expanded name for attribute \"%s\" at line %i, column %i.", data->qname, data->linenum, data->colnum); goto error; }
-
-#define ERROR_NS_INVALID(context, prefix) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, "Invalid namespace for prefix \"%s\" at line %i, column %i.", prefix, context->attr_linenum, context->attr_colnum); goto error; }
-
-#define ERROR_FIXME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "Unsupported feature at line %i, column %i.", context->linenum, context->colnum); goto error; }
-
-/* FIXME: XML 1.1 newlines */
-#define EAT_SPACES(c, buf, bufsize, context) {gboolean aftercr = FALSE; while((bufsize < 0 || c - buf < bufsize) && XML_IS_SPACE(c[0])) {if (c[0] == 0x0D) { context->colnum = 1; context->linenum++; aftercr = TRUE; } else if (c[0] == 0x0A) { if (!aftercr) { context->colnum = 1; context->linenum++; } aftercr = FALSE; } else { context->colnum++; aftercr = FALSE; } (c)++; }}
-
-#define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
-
-#define READ_TO_QUOTE(c, buf, bufsize, context, quot) EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '=') { ERROR_SYNTAX(context); } c += 1; context->colnum += 1; EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '"' && c[0] != '\'') { ERROR_SYNTAX(context); } quot = c[0]; c += 1; context->colnum += 1;
-
 
 static void
 context_parse_xml_decl (ParserContext *context)
@@ -2625,13 +2639,14 @@ context_free (ParserContext *context)
 {
     if (context->parser)
         g_object_unref (context->parser);
-    if (context->file)
-        g_object_unref (context->file);
     if (context->srcstream)
         g_object_unref (context->srcstream);
     if (context->datastream)
         g_object_unref (context->datastream);
 
+    g_free (context->basename);
+    g_free (context->entname);
+    g_free (context->showname);
     g_free (context->cur_qname);
     g_free (context->cur_attrname);
 
