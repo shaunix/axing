@@ -655,6 +655,8 @@ context_file_read_cb (GFile         *file,
     context_start_async (context);
 }
 
+void poof (gpointer data, GObject *foo) { g_print ("poof\n"); }
+
 static void
 context_start_async (ParserContext *context)
 {
@@ -878,15 +880,17 @@ context_parse_xml_decl (ParserContext *context)
     if (encoding != NULL) {
         GConverter *converter;
         GInputStream *cstream;
-        /* FIXME: check refcount handling */
         converter = (GConverter *) g_charset_converter_new ("utf-8", encoding, NULL);
         if (converter == NULL) {
             context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET,
-                                                  "Unsupported character set %s\n", encoding);
+                                                        "Unsupported character set %s\n", encoding);
             goto error;
         }
         cstream = g_converter_input_stream_new (G_INPUT_STREAM (context->datastream), converter);
+        g_object_unref (converter);
+        g_object_unref (context->datastream);
         context->datastream = g_data_input_stream_new (cstream);
+        g_object_unref (cstream);
         g_free (encoding);
     }
 
