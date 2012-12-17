@@ -1,0 +1,6 @@
+<!DOCTYPE doc [
+<!ENTITY foo "</foo>">
+]>
+<doc>
+<foo>&foo;
+</doc>

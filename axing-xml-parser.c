@@ -128,6 +128,7 @@ typedef struct {
     DoctypeState   doctype_state;
     int            linenum;
     int            colnum;
+    int            event_stack_root;
 
     int            node_linenum;
     int            node_colnum;
@@ -225,6 +226,7 @@ static void      context_start_cb               (GBufferedInputStream *stream,
 static void      context_read_line_cb           (GDataInputStream     *stream,
                                                  GAsyncResult         *res,
                                                  ParserContext        *context);
+static void      context_check_end              (ParserContext        *context);
 static void      context_parse_xml_decl         (ParserContext        *context);
 static void      context_parse_line             (ParserContext        *context,
                                                  char                 *line);
@@ -281,6 +283,7 @@ axing_xml_parser_init (AxingXmlParser *parser)
     parser->priv->context->linenum = 0;
     parser->priv->context->colnum = 1;
     parser->priv->context->parser = g_object_ref (parser);
+    parser->priv->context->event_stack_root = 0;
 
     parser->priv->event_stack = g_array_new (FALSE, FALSE, sizeof(ParserStackFrame));
 }
@@ -675,6 +678,8 @@ axing_xml_parser_parse_finish (AxingXmlParser     *parser,
 
 #define ERROR_MISSINGEND(context, qname) { context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_MISSINGEND, "%s:%i:%i:Missing end tag for \"%s\".", context->showname ? context->showname : context->basename, context->linenum, context->colnum, qname); goto error; }
 
+#define ERROR_EXTRACONTENT(context) { context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_EXTRACONTENT, "%s:%i:%i:Extra content at end of resource.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+
 #define ERROR_WRONGEND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_WRONGEND, "%s:%i:%i:Incorrect end tag \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_qname); goto error; }
 
 #define ERROR_ENTITY(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_ENTITY, "%s:%i:%i:Incorrect entity reference.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
@@ -762,15 +767,7 @@ context_read_line_cb (GDataInputStream *stream,
     }
     line = g_data_input_stream_read_line_finish (stream, res, NULL, &(context->parser->priv->error));
     if (line == NULL && context->parser->priv->error == NULL) {
-        if (context->parser->priv->event_stack->len != 0) {
-            ParserStackFrame frame = g_array_index (context->parser->priv->event_stack,
-                                                    ParserStackFrame,
-                                                    context->parser->priv->event_stack->len - 1);
-            ERROR_MISSINGEND(context, frame.qname);
-        error:
-            g_simple_async_result_complete (context->parser->priv->result);
-            return;
-        }
+        context_check_end (context);
     }
     if (line == NULL || context->parser->priv->error) {
         g_simple_async_result_complete (context->parser->priv->result);
@@ -784,6 +781,19 @@ context_read_line_cb (GDataInputStream *stream,
                                          context->parser->priv->cancellable,
                                          (GAsyncReadyCallback) context_read_line_cb,
                                          context);
+}
+
+static void
+context_check_end (ParserContext *context)
+{
+    if (context->parser->priv->event_stack->len != context->event_stack_root) {
+        ParserStackFrame frame = g_array_index (context->parser->priv->event_stack,
+                                                ParserStackFrame,
+                                                context->parser->priv->event_stack->len - 1);
+        ERROR_MISSINGEND(context, frame.qname);
+    error:
+        return;
+    }
 }
 
 static void
@@ -2084,6 +2094,11 @@ context_parse_end_element (ParserContext *context, char **line)
             context->parser->priv->event_namespace = g_strdup (namespace);
     }
 
+    if (context->parser->priv->event_stack->len <= context->event_stack_root) {
+        context->linenum = context->node_linenum;
+        context->colnum = context->node_colnum;
+        ERROR_EXTRACONTENT(context);
+    }
     frame = g_array_index (context->parser->priv->event_stack,
                            ParserStackFrame,
                            context->parser->priv->event_stack->len - 1);
@@ -2346,16 +2361,9 @@ context_parse_entity (ParserContext *context, char **line)
 {
     const char *beg = *line + 1;
     char *entname = NULL;
+    char builtin = '\0';
     int colnum = context->colnum;
-    GString *curstr;
     g_assert ((*line)[0] == '&');
-
-    if (context->state == PARSER_STATE_STELM_ATTVAL)
-        curstr = context->cur_attrval;
-    else if (context->state == PARSER_STATE_TEXT)
-        curstr = context->cur_text;
-    else
-        g_assert_not_reached();
 
     (*line)++; colnum++;
 
@@ -2396,7 +2404,20 @@ context_parse_entity (ParserContext *context, char **line)
             (*line)++; colnum++;
         }
         if (XML_IS_CHAR(cp, context) || XML_IS_CHAR_RESTRICTED(cp, context)) {
-            g_string_append_unichar (curstr, cp);
+            if (context->state == PARSER_STATE_STELM_ATTVAL) {
+                if (context->cur_attrval == NULL) {
+                    context->cur_attrval = g_string_new (NULL);
+                }
+                g_string_append_unichar (context->cur_attrval, cp);
+            }
+            else if (context->state == PARSER_STATE_TEXT) {
+                if (context->cur_text == NULL) {
+                    context->cur_text = g_string_new (NULL);
+                }
+                g_string_append_unichar (context->cur_text, cp);
+            }
+            else
+                g_assert_not_reached();
         }
         else {
             ERROR_ENTITY(context);
@@ -2428,29 +2449,56 @@ context_parse_entity (ParserContext *context, char **line)
         entname = g_strndup (beg, *line - beg);
         (*line)++; colnum++;
         if (g_str_equal (entname, "lt"))
-            g_string_append_c (curstr, '<');
+            builtin = '<';
         else if (g_str_equal (entname, "gt"))
-            g_string_append_c (curstr, '>');
+            builtin = '>';
         else if (g_str_equal (entname, "amp"))
-            g_string_append_c (curstr, '&');
+            builtin = '&';
         else if (g_str_equal (entname, "apos"))
-            g_string_append_c (curstr, '\'');
+            builtin = '\'';
         else if (g_str_equal (entname, "quot"))
-            g_string_append_c (curstr, '"');
+            builtin = '"';
+        if (builtin != '\0') {
+            if (context->state == PARSER_STATE_STELM_ATTVAL) {
+                if (context->cur_attrval == NULL) {
+                    context->cur_attrval = g_string_new (NULL);
+                }
+                g_string_append_c (context->cur_attrval, builtin);
+            }
+            else if (context->state == PARSER_STATE_TEXT) {
+                if (context->cur_text == NULL) {
+                    context->cur_text = g_string_new (NULL);
+                }
+                g_string_append_c (context->cur_text, builtin);
+            }
+            else
+                g_assert_not_reached();
+        }
         else {
             char *value = axing_dtd_schema_get_entity (context->parser->priv->doctype, entname);
             if (value) {
                 ParserContext *entctxt = g_new0 (ParserContext, 1);
+                /* not duping these two, NULL them before free below */
+                entctxt->basename = context->basename;
+                entctxt->entname = entname;
+                entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
                 entctxt->state = context->state;
-                entctxt->linenum = 0;
+                entctxt->linenum = 1;
                 entctxt->colnum = 1;
                 entctxt->parser = g_object_ref (context->parser);
+                entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
+
                 context_parse_data (entctxt, value);
+                if (entctxt->parser->priv->error == NULL)
+                    context_check_end (entctxt);
+
                 context->state = entctxt->state;
                 context->cur_text = entctxt->cur_text;
                 entctxt->cur_text = NULL;
+                entctxt->basename = NULL;
+                entctxt->entname = NULL;
                 context_free (entctxt);
             }
             else {
@@ -2480,14 +2528,14 @@ context_parse_text (ParserContext *context, char **line)
             parser_clean_event_data (context->parser);
             return;
         }
-        if (context->cur_text == NULL) {
-            context->cur_text = g_string_new (NULL);
-        }
         if ((*line)[0] == '&') {
             context_parse_entity (context, line);
             if (context->parser->priv->error)
                 goto error;
             continue;
+        }
+        if (context->cur_text == NULL) {
+            context->cur_text = g_string_new (NULL);
         }
         cp = g_utf8_get_char (*line);
         if (!XML_IS_CHAR (cp, context)) {

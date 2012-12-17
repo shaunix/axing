@@ -1,0 +1,4 @@
+[ doc |doc ()
+  # %0A
+  [ foo |foo ()
+error: entities14.xml(&foo;):1:1:Extra content at end of resource.
