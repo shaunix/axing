@@ -2021,35 +2021,11 @@ context_parse_end_element (ParserContext *context, char **line)
     ParserStackFrame frame;
     const char *colon;
     if (context->state != PARSER_STATE_ENDELM) {
-        GString *elname = g_string_new (NULL);
-        gboolean firstchar = TRUE;
         g_assert ((*line)[0] == '<' && (*line)[1] == '/');
         context->node_linenum = context->linenum;
         context->node_colnum = context->colnum;
         (*line) += 2; context->colnum += 2;
-        while (!((*line)[0] == '\0' || (*line)[0] == '>' || XML_IS_SPACE ((*line)[0]))) {
-            gunichar cp;
-            char *next;
-            gsize bytes;
-            cp = g_utf8_get_char (*line);
-            if (firstchar) {
-                if (!XML_IS_NAME_START_CHAR(cp)) {
-                    ERROR_SYNTAX(context);
-                }
-                firstchar = FALSE;
-            }
-            else {
-                if (!XML_IS_NAME_CHAR(cp)) {
-                    ERROR_SYNTAX(context);
-                }
-            }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (elname, *line, bytes);
-            *line = next; context->colnum += 1;
-        }
-        g_free (context->parser->priv->event_qname);
-        context->parser->priv->event_qname = g_string_free (elname, FALSE);
+        XML_GET_NAME(line, context->parser->priv->event_qname, context);
     }
     EAT_SPACES (*line, *line, -1, context);
     if ((*line)[0] == '\0') {
@@ -2123,36 +2099,14 @@ context_parse_end_element (ParserContext *context, char **line)
 static void
 context_parse_start_element (ParserContext *context, char **line)
 {
-    GString *elname = g_string_new (NULL);
-    gboolean firstchar = TRUE;
     g_assert ((*line)[0] == '<');
     context->node_linenum = context->linenum;
     context->node_colnum = context->colnum;
     (*line)++; context->colnum++;
-    while ((*line)[0] && !(XML_IS_SPACE((*line)[0]) || (*line)[0] == '>' || (*line)[0] == '/')) {
-        gunichar cp;
-        char *next;
-        gsize bytes;
-        cp = g_utf8_get_char (*line);
-        if (firstchar) {
-            if (!XML_IS_NAME_START_CHAR(cp)) {
-                ERROR_SYNTAX(context);
-            }
-            firstchar = FALSE;
-        }
-        else {
-            if (!XML_IS_NAME_CHAR(cp)) {
-                ERROR_SYNTAX(context);
-            }
-        }
-        next = g_utf8_next_char (*line);
-        bytes = next - *line;
-        g_string_append_len (elname, *line, bytes);
-        *line = next; context->colnum += 1;
-    }
 
     g_free (context->cur_qname);
-    context->cur_qname = g_string_free (elname, FALSE);
+    context->cur_qname = NULL;
+    XML_GET_NAME(line, context->cur_qname, context);
 
     if ((*line)[0] == '>') {
         context_trigger_start_element (context);
@@ -2177,8 +2131,6 @@ static void
 context_parse_attrs (ParserContext *context, char **line)
 {
     if (context->state == PARSER_STATE_STELM_BASE) {
-        GString *attrname;
-        gboolean firstchar = TRUE;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '>') {
             context_trigger_start_element (context);
@@ -2198,34 +2150,8 @@ context_parse_attrs (ParserContext *context, char **line)
         }
         context->attr_linenum = context->linenum;
         context->attr_colnum = context->colnum;
-        attrname = g_string_new (NULL);
-        while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
-            cp = g_utf8_get_char (*line);
-            if (firstchar) {
-                if (!XML_IS_NAME_START_CHAR(cp)) {
-                    ERROR_SYNTAX(context);
-                }
-                firstchar = FALSE;
-            }
-            else {
-                if (!XML_IS_NAME_CHAR(cp)) {
-                    ERROR_SYNTAX(context);
-                }
-            }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (attrname, *line, bytes);
-            *line = next; context->colnum += 1;
-            if ((*line)[0] == '=' || XML_IS_SPACE((*line)[0])) {
-                context->state = PARSER_STATE_STELM_ATTNAME;
-                break;
-            }
-        }
-        g_free (context->cur_attrname);
-        context->cur_attrname = g_string_free (attrname, FALSE);
+
+        XML_GET_NAME(line, context->cur_attrname, context);
         context->state = PARSER_STATE_STELM_ATTNAME;
     }
     if (context->state == PARSER_STATE_STELM_ATTNAME) {

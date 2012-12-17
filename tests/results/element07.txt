@@ -1,0 +1,2 @@
+[ doc |doc ()
+error: element07.xml:1:10:Syntax error.
