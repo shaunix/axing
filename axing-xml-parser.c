@@ -457,8 +457,9 @@ stream_get_event_qname (AxingStream *stream)
     AxingXmlParser *parser;
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
-    /* FIXME: check more states */
-    g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          NULL);
     return parser->priv->event_qname;
 }
 
@@ -468,7 +469,11 @@ stream_get_event_content (AxingStream *stream)
     AxingXmlParser *parser;
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
-    /* FIXME: check more states */
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_CONTENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_COMMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_CDATA   ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+                          NULL);
     g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
     return parser->priv->event_content;
 }
@@ -479,8 +484,9 @@ stream_get_event_prefix (AxingStream *stream)
     AxingXmlParser *parser;
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
-    /* FIXME: check more states */
-    g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          NULL);
     return parser->priv->event_prefix ? parser->priv->event_prefix : "";
 }
 
@@ -490,8 +496,9 @@ stream_get_event_localname (AxingStream *stream)
     AxingXmlParser *parser;
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
-    /* FIXME: check more states */
-    g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          NULL);
     return parser->priv->event_localname ? parser->priv->event_localname : parser->priv->event_qname;
 }
 
@@ -501,8 +508,9 @@ stream_get_event_namespace (AxingStream *stream)
     AxingXmlParser *parser;
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
-    /* FIXME: check more states */
-    g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
+    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          NULL);
     return parser->priv->event_namespace ? parser->priv->event_namespace : "";
 }
 
