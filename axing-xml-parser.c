@@ -137,7 +137,6 @@ typedef struct {
 
     char          *cur_qname;
     char          *cur_attrname;
-    GString       *cur_attrval;
     char           quotechar;
     gboolean       empty;
     GHashTable    *cur_nshash;
@@ -2247,7 +2246,7 @@ context_parse_attrs (ParserContext *context, char **line)
         if ((*line)[0] == '\'' || (*line)[0] == '"') {
             context->quotechar = (*line)[0];
             (*line)++; context->colnum++;
-            context->cur_attrval = g_string_new (NULL);
+            context->cur_text = g_string_new (NULL);
             context->state = PARSER_STATE_STELM_ATTVAL;
         }
         else if ((*line)[0] == '\0') {
@@ -2265,8 +2264,8 @@ context_parse_attrs (ParserContext *context, char **line)
             if ((*line)[0] == context->quotechar) {
                 char *xmlns = NULL;
                 char *attrval;
-                attrval = g_string_free (context->cur_attrval, FALSE);
-                context->cur_attrval = NULL;
+                attrval = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
 
                 if (g_str_has_prefix (context->cur_attrname, "xmlns:")) {
                     /* FIXME: if cur_attrname == "xmlns:"? */
@@ -2348,7 +2347,7 @@ context_parse_attrs (ParserContext *context, char **line)
             }
             next = g_utf8_next_char (*line);
             bytes = next - *line;
-            g_string_append_len (context->cur_attrval, *line, bytes);
+            g_string_append_len (context->cur_text, *line, bytes);
             *line = next; context->colnum += 1;
         }
     }
@@ -2404,20 +2403,9 @@ context_parse_entity (ParserContext *context, char **line)
             (*line)++; colnum++;
         }
         if (XML_IS_CHAR(cp, context) || XML_IS_CHAR_RESTRICTED(cp, context)) {
-            if (context->state == PARSER_STATE_STELM_ATTVAL) {
-                if (context->cur_attrval == NULL) {
-                    context->cur_attrval = g_string_new (NULL);
-                }
-                g_string_append_unichar (context->cur_attrval, cp);
-            }
-            else if (context->state == PARSER_STATE_TEXT) {
-                if (context->cur_text == NULL) {
-                    context->cur_text = g_string_new (NULL);
-                }
-                g_string_append_unichar (context->cur_text, cp);
-            }
-            else
-                g_assert_not_reached();
+            if (context->cur_text == NULL)
+                context->cur_text = g_string_new (NULL);
+            g_string_append_unichar (context->cur_text, cp);
         }
         else {
             ERROR_ENTITY(context);
@@ -2459,20 +2447,9 @@ context_parse_entity (ParserContext *context, char **line)
         else if (g_str_equal (entname, "quot"))
             builtin = '"';
         if (builtin != '\0') {
-            if (context->state == PARSER_STATE_STELM_ATTVAL) {
-                if (context->cur_attrval == NULL) {
-                    context->cur_attrval = g_string_new (NULL);
-                }
-                g_string_append_c (context->cur_attrval, builtin);
-            }
-            else if (context->state == PARSER_STATE_TEXT) {
-                if (context->cur_text == NULL) {
-                    context->cur_text = g_string_new (NULL);
-                }
-                g_string_append_c (context->cur_text, builtin);
-            }
-            else
-                g_assert_not_reached();
+            if (context->cur_text == NULL) 
+                context->cur_text = g_string_new (NULL);
+            g_string_append_c (context->cur_text, builtin);
         }
         else {
             char *value = axing_dtd_schema_get_entity (context->parser->priv->doctype, entname);
@@ -2698,8 +2675,6 @@ context_free (ParserContext *context)
     g_free (context->cur_qname);
     g_free (context->cur_attrname);
 
-    if (context->cur_attrval)
-        g_string_free (context->cur_attrval, TRUE);
     if (context->cur_nshash)
         g_hash_table_destroy (context->cur_nshash);
     if (context->cur_attrs)
