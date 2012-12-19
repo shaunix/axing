@@ -1228,7 +1228,7 @@ context_parse_doctype (ParserContext  *context,
             context_parse_doctype_notation (context, line);
         }
         else if (g_str_has_prefix (*line, "<!--")) {
-            ERROR_FIXME(context);
+            context_parse_comment (context, line);
         }
         else if (g_str_has_prefix (*line, "<?")) {
             ERROR_FIXME(context);
@@ -1987,12 +1987,18 @@ context_parse_comment (ParserContext *context, char **line)
             }
             (*line) += 3; context->colnum += 3;
 
-            context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
-            context->cur_text = NULL;
-            context->parser->priv->event_type = AXING_STREAM_EVENT_COMMENT;
+            if (context->prev_state == PARSER_STATE_DOCTYPE) {
+                /* currently not doing anything with comments in the internal subset */
+                g_string_free (context->cur_text, TRUE);
+            }
+            else {
+                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->parser->priv->event_type = AXING_STREAM_EVENT_COMMENT;
 
-            g_signal_emit_by_name (context->parser, "stream-event");
-            parser_clean_event_data (context->parser);
+                g_signal_emit_by_name (context->parser, "stream-event");
+                parser_clean_event_data (context->parser);
+            }
             context->state = context->prev_state;
             return;
         }
