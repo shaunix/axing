@@ -125,6 +125,8 @@ typedef struct {
     char              *showname;
 
     ParserState    state;
+    ParserState    init_state;
+    ParserState    prev_state;
     DoctypeState   doctype_state;
     int            linenum;
     int            colnum;
@@ -279,6 +281,7 @@ axing_xml_parser_init (AxingXmlParser *parser)
 
     parser->priv->context = g_new0 (ParserContext, 1);
     parser->priv->context->state = PARSER_STATE_NONE;
+    parser->priv->context->init_state = PARSER_STATE_ROOT;
     parser->priv->context->linenum = 0;
     parser->priv->context->colnum = 1;
     parser->priv->context->parser = g_object_ref (parser);
@@ -955,11 +958,6 @@ context_parse_data (ParserContext *context, char *line)
         case PARSER_STATE_START:
         case PARSER_STATE_ROOT:
         case PARSER_STATE_TEXT:
-            if (context->state == PARSER_STATE_TEXT && context->parser->priv->event_stack->len == 0) {
-                g_string_free (context->cur_text, TRUE);
-                context->cur_text = NULL;
-                context->state = PARSER_STATE_ROOT;
-            }
             if (context->state != PARSER_STATE_TEXT) {
                 EAT_SPACES (c, line, -1, context);
             }
@@ -1975,6 +1973,7 @@ context_parse_comment (ParserContext *context, char **line)
         }
         (*line) += 4; context->colnum += 4;
         context->cur_text = g_string_new (NULL);
+        context->prev_state = context->state;
         context->state = PARSER_STATE_COMMENT;
     }
 
@@ -1994,7 +1993,7 @@ context_parse_comment (ParserContext *context, char **line)
 
             g_signal_emit_by_name (context->parser, "stream-event");
             parser_clean_event_data (context->parser);
-            context->state = PARSER_STATE_TEXT;
+            context->state = context->prev_state;
             return;
         }
         cp = g_utf8_get_char (*line);
@@ -2097,7 +2096,12 @@ context_parse_end_element (ParserContext *context, char **line)
 
     context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
     g_signal_emit_by_name (context->parser, "stream-event");
-    context->state = PARSER_STATE_TEXT;
+
+    if (context->parser->priv->event_stack->len == context->event_stack_root)
+        context->state = context->init_state;
+    else
+        context->state = PARSER_STATE_TEXT;
+
     parser_clean_event_data (context->parser);
 
  error:
@@ -2370,6 +2374,7 @@ context_parse_entity (ParserContext *context, char **line)
         }
         entname = g_strndup (beg, *line - beg);
         (*line)++; colnum++;
+
         if (g_str_equal (entname, "lt"))
             builtin = '<';
         else if (g_str_equal (entname, "gt"))
@@ -2380,6 +2385,7 @@ context_parse_entity (ParserContext *context, char **line)
             builtin = '\'';
         else if (g_str_equal (entname, "quot"))
             builtin = '"';
+
         if (builtin != '\0') {
             if (context->cur_text == NULL) 
                 context->cur_text = g_string_new (NULL);
@@ -2394,6 +2400,7 @@ context_parse_entity (ParserContext *context, char **line)
                 entctxt->entname = entname;
                 entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
                 entctxt->state = context->state;
+                entctxt->init_state = context->state;
                 entctxt->linenum = 1;
                 entctxt->colnum = 1;
                 entctxt->parser = g_object_ref (context->parser);
