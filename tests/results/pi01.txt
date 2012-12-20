@@ -1,0 +1,7 @@
+? pi1 
+[ doc |doc ()
+  # %0A
+  ? pi2 some%20value%20%0A%20
+  # %0A
+] doc |doc ()
+finish

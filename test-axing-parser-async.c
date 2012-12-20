@@ -69,6 +69,15 @@ stream_event (AxingStream *stream,
     g_print ("! %s\n", encval);
     g_free (encval);
     break;
+  case AXING_STREAM_EVENT_INSTRUCTION:
+    for (i = 0; i < indent; i++) g_print ("  ");
+    encval = g_uri_escape_string (axing_stream_get_event_content (stream),
+                                  NULL, TRUE);
+    g_print ("? %s %s\n",
+             axing_stream_get_event_qname (stream),
+             encval);
+    g_free (encval);
+    break;
   default:
     g_print ("event\n");
   }

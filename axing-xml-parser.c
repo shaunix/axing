@@ -44,6 +44,7 @@ typedef enum {
     PARSER_STATE_TEXT,
     PARSER_STATE_COMMENT,
     PARSER_STATE_CDATA,
+    PARSER_STATE_INSTRUCTION,
 
     PARSER_STATE_DOCTYPE,
     PARSER_STATE_NULL
@@ -461,7 +462,8 @@ stream_get_event_qname (AxingStream *stream)
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
     g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
     return parser->priv->event_qname;
 }
@@ -488,7 +490,8 @@ stream_get_event_prefix (AxingStream *stream)
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
     g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
     return parser->priv->event_prefix ? parser->priv->event_prefix : "";
 }
@@ -500,7 +503,8 @@ stream_get_event_localname (AxingStream *stream)
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
     g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
     return parser->priv->event_localname ? parser->priv->event_localname : parser->priv->event_qname;
 }
@@ -512,7 +516,8 @@ stream_get_event_namespace (AxingStream *stream)
     g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
     parser = (AxingXmlParser *) stream;
     g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT,
+                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
     return parser->priv->event_namespace ? parser->priv->event_namespace : "";
 }
@@ -1016,6 +1021,9 @@ context_parse_data (ParserContext *context, char *line)
             break;
         case PARSER_STATE_COMMENT:
             context_parse_comment (context, &c);
+            break;
+        case PARSER_STATE_INSTRUCTION:
+            context_parse_instruction (context, &c);
             break;
         case PARSER_STATE_DOCTYPE:
             context_parse_doctype (context, &c);
@@ -2023,7 +2031,60 @@ context_parse_comment (ParserContext *context, char **line)
 static void
 context_parse_instruction (ParserContext *context, char **line)
 {
-    ERROR_FIXME (context);
+    if (context->state != PARSER_STATE_INSTRUCTION) {
+        if (!g_str_has_prefix (*line, "<?")) {
+            ERROR_SYNTAX(context);
+        }
+        (*line) += 2; context->colnum += 2;
+        XML_GET_NAME(line, context->parser->priv->event_qname, context);
+
+        context->prev_state = context->state;
+        context->state = PARSER_STATE_INSTRUCTION;
+    }
+
+    if (context->cur_text == NULL) {
+        EAT_SPACES (*line, *line, -1, context);
+        if ((*line)[0] == '\0')
+            return;
+        context->cur_text = g_string_new (NULL);
+    }
+
+    while ((*line)[0] != '\0') {
+        gunichar cp;
+        char *next;
+        gsize bytes;
+        if ((*line)[0] == '?' && (*line)[1] == '>') {
+            (*line) += 2; context->colnum += 2;
+
+            if (context->prev_state == PARSER_STATE_DOCTYPE) {
+                /* currently not doing anything with PIs in the internal subset */
+                g_string_free (context->cur_text, TRUE);
+            }
+            else {
+                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->parser->priv->event_type = AXING_STREAM_EVENT_INSTRUCTION;
+
+                g_signal_emit_by_name (context->parser, "stream-event");
+                parser_clean_event_data (context->parser);
+            }
+            context->state = context->prev_state;
+            return;
+        }
+        cp = g_utf8_get_char (*line);
+        if (!XML_IS_CHAR(cp, context)) {
+            ERROR_SYNTAX(context);
+        }
+        next = g_utf8_next_char (*line);
+        bytes = next - *line;
+        /* FIXME: newlines */
+        g_string_append_len (context->cur_text, *line, bytes);
+        *line = next; context->colnum += 1;
+    }
+
+    if ((*line)[0] == '\0')
+        g_string_append_c (context->cur_text, 0xA);
+
  error:
     return;
 }
