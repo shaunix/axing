@@ -1,0 +1,12 @@
+[ doc |doc ()
+  # a
+  [ foo |foo ()
+    # b
+  ] foo |foo ()
+  # c
+  [ foo |foo ()
+    # d
+  ] foo |foo ()
+  # e
+] doc |doc ()
+finish

@@ -33,7 +33,8 @@ typedef enum {
     PARSER_STATE_NONE,
 
     PARSER_STATE_START,
-    PARSER_STATE_ROOT,
+    PARSER_STATE_PROLOG,
+    PARSER_STATE_EPILOG,
 
     PARSER_STATE_STELM_BASE,
     PARSER_STATE_STELM_ATTNAME,
@@ -282,7 +283,7 @@ axing_xml_parser_init (AxingXmlParser *parser)
 
     parser->priv->context = g_new0 (ParserContext, 1);
     parser->priv->context->state = PARSER_STATE_NONE;
-    parser->priv->context->init_state = PARSER_STATE_ROOT;
+    parser->priv->context->init_state = PARSER_STATE_PROLOG;
     parser->priv->context->linenum = 0;
     parser->priv->context->colnum = 1;
     parser->priv->context->parser = g_object_ref (parser);
@@ -1002,7 +1003,7 @@ context_parse_xml_decl (ParserContext *context)
         g_free (encoding);
     }
 
-    context->state = PARSER_STATE_ROOT;
+    context->state = PARSER_STATE_PROLOG;
 
  error:
     return;
@@ -1030,7 +1031,8 @@ context_parse_data (ParserContext *context, char *line)
     while (c[0] != '\0') {
         switch (context->state) {
         case PARSER_STATE_START:
-        case PARSER_STATE_ROOT:
+        case PARSER_STATE_PROLOG:
+        case PARSER_STATE_EPILOG:
         case PARSER_STATE_TEXT:
             if (context->state != PARSER_STATE_TEXT) {
                 EAT_SPACES (c, line, -1, context);
@@ -1065,9 +1067,13 @@ context_parse_data (ParserContext *context, char *line)
                     context_parse_end_element (context, &c);
                     break;
                 default:
-                    /* FIXME: if STATE_TEXT and empty stack, error */
+                    if (context->state == PARSER_STATE_EPILOG)
+                        ERROR_EXTRACONTENT(context);
                     context_parse_start_element (context, &c);
                 }
+            }
+            else if (context->state == PARSER_STATE_EPILOG) {
+                ERROR_EXTRACONTENT(context);
             }
             else if (context->state == PARSER_STATE_TEXT) {
                 context_parse_text (context, &c);
@@ -1114,7 +1120,7 @@ context_parse_doctype (ParserContext  *context,
 {
     switch (context->state) {
     case PARSER_STATE_START:
-    case PARSER_STATE_ROOT:
+    case PARSER_STATE_PROLOG:
         if (context->parser->priv->doctype != NULL) {
             ERROR_SYNTAX(context);
         }
@@ -1152,7 +1158,7 @@ context_parse_doctype (ParserContext  *context,
             return;
         if ((*line)[0] == '>') {
             context->doctype_state = DOCTYPE_STATE_NULL;
-            context->state = PARSER_STATE_ROOT;
+            context->state = PARSER_STATE_PROLOG;
             (*line)++; context->colnum++;
             return;
         }
@@ -1272,7 +1278,7 @@ context_parse_doctype (ParserContext  *context,
             break;
         case '>':
             context->doctype_state = DOCTYPE_STATE_NULL;
-            context->state = PARSER_STATE_ROOT;
+            context->state = PARSER_STATE_PROLOG;
             (*line)++; context->colnum++;
             return;
         default:
@@ -1362,7 +1368,7 @@ context_parse_doctype (ParserContext  *context,
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_NULL;
-        context->state = PARSER_STATE_ROOT;
+        context->state = PARSER_STATE_PROLOG;
         (*line)++; context->colnum++;
         return;
     }
@@ -2732,6 +2738,8 @@ context_trigger_start_element (ParserContext *context)
     if (context->empty &&
         (context->parser->priv->event_stack->len == context->event_stack_root)) {
         context->state = context->init_state;
+        if (context->state == PARSER_STATE_PROLOG)
+            context->state = PARSER_STATE_EPILOG;
     }
     else {
         context->state = PARSER_STATE_TEXT;
