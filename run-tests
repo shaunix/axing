@@ -1,5 +1,8 @@
 #!/bin/sh
+for sync in async sync; do
+prog="test-axing-parser-$sync";
 for xml in tests/xml/*.xml; do
     txt=tests/results/`basename $xml .xml`.txt;
-    test -f $txt && ./test-axing-parser-async $xml | cmp -s - $txt || (echo $xml; exit 1; ) || break;
+    test -f $txt && ./$prog $xml | cmp -s - $txt || (echo $prog:$xml; exit 1; ) || break;
+done
 done

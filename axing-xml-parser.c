@@ -617,6 +617,76 @@ stream_get_attribute_value (AxingStream *stream,
 }
 
 void
+axing_xml_parser_parse (AxingXmlParser  *parser,
+                        GCancellable    *cancellable,
+                        GError         **error)
+{
+    ParserContext *context;
+    GFile *file;
+    char *line;
+    char *parsename;
+    const char *slash;
+    g_return_if_fail (parser->priv->context->state == PARSER_STATE_NONE);
+    context = parser->priv->context;
+    context->state = PARSER_STATE_START;
+
+    parser->priv->async = FALSE;
+    if (cancellable)
+        parser->priv->cancellable = g_object_ref (cancellable);
+
+    file = axing_resource_get_file (parser->priv->resource);
+    parsename = g_file_get_parse_name (file);
+    slash = strrchr (parsename, '/');
+    if (slash) {
+        context->basename = g_strdup (slash + 1);
+        g_free (parsename);
+    }
+    else {
+        context->basename = parsename;
+    }
+
+    context->srcstream = axing_resource_get_input_stream (parser->priv->resource);
+    if (context->srcstream == NULL) {
+        context->srcstream = G_INPUT_STREAM (g_file_read (file,
+                                                          parser->priv->cancellable,
+                                                          &(parser->priv->error)));
+        if (parser->priv->error)
+            goto error;
+    }
+
+    context->datastream = g_data_input_stream_new (context->srcstream);
+    g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
+                                  1024,
+                                  parser->priv->cancellable,
+                                  &(parser->priv->error));
+    if (parser->priv->error)
+        goto error;
+
+    context_parse_xml_decl (context);
+    if (parser->priv->error)
+        goto error;
+
+    g_data_input_stream_set_newline_type (context->datastream,
+                                          G_DATA_STREAM_NEWLINE_TYPE_ANY);
+    while ((line = g_data_input_stream_read_line (context->datastream, NULL,
+                                                  parser->priv->cancellable,
+                                                  &(parser->priv->error)) )) {
+        if (parser->priv->error)
+            goto error;
+        context->linenum++;
+        context->colnum = 1;
+        context_parse_line (context, line);
+    }
+    if (line == NULL && parser->priv->error == NULL)
+        context_check_end (context);
+
+ error:
+    /* FIXME: cleanup */
+    if (parser->priv->error)
+        g_propagate_error(error, parser->priv->error);
+}
+
+void
 axing_xml_parser_parse_async (AxingXmlParser      *parser,
                               GCancellable        *cancellable,
                               GAsyncReadyCallback  callback,
@@ -726,7 +796,8 @@ context_file_read_cb (GFile         *file,
                       GAsyncResult  *res,
                       ParserContext *context)
 {
-    context->srcstream = G_INPUT_STREAM (g_file_read_finish (file, res, &context->parser->priv->error));
+    context->srcstream = G_INPUT_STREAM (g_file_read_finish (file, res,
+                                                             &(context->parser->priv->error)));
 
     if (context->parser->priv->error) {
         g_simple_async_result_complete (context->parser->priv->result);
@@ -734,8 +805,6 @@ context_file_read_cb (GFile         *file,
     }
     context_start_async (context);
 }
-
-void poof (gpointer data, GObject *foo) { g_print ("poof\n"); }
 
 static void
 context_start_async (ParserContext *context)
@@ -2188,15 +2257,13 @@ context_parse_start_element (ParserContext *context, char **line)
     XML_GET_NAME(line, context->cur_qname, context);
 
     if ((*line)[0] == '>') {
-        context_trigger_start_element (context);
         (*line)++; context->colnum++;
-        context->state = PARSER_STATE_TEXT;
+        context_trigger_start_element (context);
     }
     else if ((*line)[0] == '/' && (*line)[1] == '>') {
         context->empty = TRUE;
-        context_trigger_start_element (context);
         (*line) += 2; context->colnum += 2;
-        context->state = PARSER_STATE_TEXT;
+        context_trigger_start_element (context);
     }
     else {
         context->state = PARSER_STATE_STELM_BASE;
@@ -2212,16 +2279,14 @@ context_parse_attrs (ParserContext *context, char **line)
     if (context->state == PARSER_STATE_STELM_BASE) {
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '>') {
-            context_trigger_start_element (context);
             (*line)++; context->colnum++;
-            context->state = PARSER_STATE_TEXT;
+            context_trigger_start_element (context);
             return;
         }
         else if ((*line)[0] == '/' && (*line)[1] == '>') {
             context->empty = TRUE;
-            context_trigger_start_element (context);
             (*line) += 2; context->colnum += 2;
-            context->state = PARSER_STATE_TEXT;
+            context_trigger_start_element (context);
             return;
         }
         if ((*line)[0] == '\0') {
@@ -2660,11 +2725,18 @@ context_trigger_start_element (ParserContext *context)
                               context->parser->priv->event_stack->len - 1);
         context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
         g_signal_emit_by_name (context->parser, "stream-event");
-        context->empty = FALSE;
     }
 
  error:
     parser_clean_event_data (context->parser);
+    if (context->empty &&
+        (context->parser->priv->event_stack->len == context->event_stack_root)) {
+        context->state = context->init_state;
+    }
+    else {
+        context->state = PARSER_STATE_TEXT;
+    }
+    context->empty = FALSE;
 }
 
 static void
