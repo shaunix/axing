@@ -1,0 +1,4 @@
+[ doc |doc ()
+  @ attr |attr () bar
+] doc |doc ()
+finish

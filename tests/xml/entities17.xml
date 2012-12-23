@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!ENTITY foo "aaa">
+]>
+<doc attr="b&foo;r"/>

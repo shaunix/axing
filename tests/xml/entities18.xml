@@ -1,0 +1,6 @@
+<!DOCTYPE doc [
+<!ENTITY foo "<wrong>">
+]>
+<doc>
+<el attr="&foo;"/>
+</doc>
