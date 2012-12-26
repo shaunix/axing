@@ -5,6 +5,7 @@
 
 GMainLoop *loop;
 
+gulong handler;
 int errcode;
 int indent;
 
@@ -90,14 +91,24 @@ parse_finish (AxingXmlParser  *parser,
 {
   GError *error = NULL;
   axing_xml_parser_parse_finish (parser, res, &error);
-  if (error) {
-    errcode = 1;
-    g_print ("error: %s\n", error->message);
+  if (handler != 0) {
+    if (error) {
+      errcode = 1;
+      g_print ("error: %s\n", error->message);
+    }
+    else {
+      g_print ("finish\n");
+    }
+    g_signal_handler_disconnect (parser, handler);
+    handler = 0;
+    axing_xml_parser_parse_async (parser,
+                                  NULL,
+                                  (GAsyncReadyCallback) parse_finish,
+                                  NULL);
   }
   else {
-    g_print ("finish\n");
+    g_main_loop_quit (loop);
   }
-  g_main_loop_quit (loop);
 }
 
 int
@@ -120,7 +131,7 @@ main (int argc, char **argv)
     g_object_unref (resource);
     g_object_unref (file);
 
-    g_signal_connect (parser, "stream-event", G_CALLBACK (stream_event), NULL);
+    handler = g_signal_connect (parser, "stream-event", G_CALLBACK (stream_event), NULL);
     axing_xml_parser_parse_async (parser,
                                   NULL,
                                   (GAsyncReadyCallback) parse_finish,

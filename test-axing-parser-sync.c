@@ -96,15 +96,17 @@ main (int argc, char **argv)
     GFile *file;
     AxingResource *resource;
     GError *error = NULL;
+    gulong handler;
     file = g_file_new_for_commandline_arg (argv[1]);
     resource = axing_resource_new (file, NULL);
     parser = axing_xml_parser_new (resource, NULL);
     g_object_unref (resource);
     g_object_unref (file);
 
-    g_signal_connect (parser, "stream-event", G_CALLBACK (stream_event), NULL);
+    handler = g_signal_connect (parser, "stream-event", G_CALLBACK (stream_event), NULL);
     axing_xml_parser_parse (parser, NULL, &error);
-    g_object_unref (parser);
+    g_signal_handler_disconnect (parser, handler);
+    axing_xml_parser_parse (parser, NULL, NULL);
 
     if (error) {
       errcode = 1;
@@ -115,5 +117,6 @@ main (int argc, char **argv)
     }
   }
 
+  g_object_unref (parser);
   return errcode;
 }
