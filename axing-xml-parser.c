@@ -1359,7 +1359,7 @@ context_parse_doctype (ParserContext  *context,
             context_parse_comment (context, line);
         }
         else if (g_str_has_prefix (*line, "<?")) {
-            ERROR_FIXME(context);
+            context_parse_instruction (context, line);
         }
         else {
             ERROR_SYNTAX(context);
