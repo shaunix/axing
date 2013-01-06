@@ -1,0 +1,4 @@
+[ doc |doc ()
+  # foobar
+] doc |doc ()
+finish

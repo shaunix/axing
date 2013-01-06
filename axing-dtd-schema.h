@@ -114,6 +114,8 @@ gboolean          axing_dtd_schema_add_notation             (AxingDtdSchema  *dt
 
 char *            axing_dtd_schema_get_entity               (AxingDtdSchema  *dtd,
                                                              const char      *name);
+char *            axing_dtd_schema_get_parameter            (AxingDtdSchema  *dtd,
+                                                             const char      *name);
 
 G_END_DECLS
 

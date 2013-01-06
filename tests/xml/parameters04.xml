@@ -1,0 +1,8 @@
+<!DOCTYPE doc [
+<!ENTITY % p1 '
+<!ENTITY f "foo">
+<!ENTITY b "bar"
+'>
+%p1;
+]>
+<doc>&f;&b;</doc>

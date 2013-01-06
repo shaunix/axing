@@ -1,0 +1,7 @@
+<!DOCTYPE doc [
+<!ENTITY % foo '<!ENTITY foo "bar">'>
+%foo;
+]>
+<doc>
+<el attr="&foo;"/>
+</doc>

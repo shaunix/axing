@@ -310,3 +310,19 @@ axing_dtd_schema_get_entity (AxingDtdSchema *dtd,
 
     return g_strdup (data->value);
 }
+
+char *
+axing_dtd_schema_get_parameter (AxingDtdSchema *dtd,
+                                const char     *name)
+{
+    EntityData *data;
+
+    g_return_val_if_fail (dtd && AXING_IS_DTD_SCHEMA (dtd), FALSE);
+
+    data = (EntityData *) g_hash_table_lookup (dtd->priv->parameter_entities, name);
+
+    if (data == NULL)
+        return NULL;
+
+    return g_strdup (data->value);
+}

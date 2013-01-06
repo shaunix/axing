@@ -1,0 +1,1 @@
+error: parameters04.xml(%p1;):4:1:Syntax error.

@@ -60,11 +60,22 @@ struct _AxingResourceClass {
 
 GType                axing_resource_get_type           (void);
 
-AxingResource *      axing_resource_new                (GFile         *file,
-                                                        GInputStream  *stream);
+AxingResource *      axing_resource_new                (GFile               *file,
+                                                        GInputStream        *stream);
 
-GFile *              axing_resource_get_file           (AxingResource *resource);
-GInputStream *       axing_resource_get_input_stream   (AxingResource *resource);
+GFile *              axing_resource_get_file           (AxingResource       *resource);
+GInputStream *       axing_resource_get_input_stream   (AxingResource       *resource);
+
+GInputStream *       axing_resource_read               (AxingResource       *resource,
+                                                        GCancellable        *cancellable,
+                                                        GError             **error);
+void                 axing_resource_read_async         (AxingResource       *resource,
+                                                        GCancellable        *cancellable,
+                                                        GAsyncReadyCallback  callback,
+                                                        gpointer             user_data);
+GInputStream *       axing_resource_read_finish        (AxingResource       *resource,
+                                                        GAsyncResult        *res,
+                                                        GError             **error);
 
 G_END_DECLS
 

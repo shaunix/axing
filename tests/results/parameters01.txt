@@ -1,0 +1,8 @@
+[ doc |doc ()
+  # %0A
+  [ el |el ()
+    @ attr |attr () bar
+  ] el |el ()
+  # %0A
+] doc |doc ()
+finish

@@ -25,7 +25,7 @@
 
 struct _AxingResourcePrivate {
     GFile *file;
-    GInputStream *stream;
+    GInputStream *input;
 };
 
 static void      axing_resource_init          (AxingResource       *resource);
@@ -93,9 +93,9 @@ axing_resource_dispose (GObject *object)
         g_object_unref (resource->priv->file);
         resource->priv->file = NULL;
     }
-    if (resource->priv->stream) {
-        g_object_unref (resource->priv->stream);
-        resource->priv->stream = NULL;
+    if (resource->priv->input) {
+        g_object_unref (resource->priv->input);
+        resource->priv->input = NULL;
     }
     G_OBJECT_CLASS (axing_resource_parent_class)->dispose (object);
 }
@@ -112,7 +112,7 @@ axing_resource_get_property (GObject    *object,
         g_value_set_object (value, resource->priv->file);
         break;
     case PROP_STREAM:
-        g_value_set_object (value, resource->priv->stream);
+        g_value_set_object (value, resource->priv->input);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -133,9 +133,9 @@ axing_resource_set_property (GObject      *object,
         resource->priv->file = G_FILE (g_value_dup_object (value));
         break;
     case PROP_STREAM:
-        if (resource->priv->stream)
-            g_object_unref (resource->priv->stream);
-        resource->priv->stream = G_INPUT_STREAM (g_value_dup_object (value));
+        if (resource->priv->input)
+            g_object_unref (resource->priv->input);
+        resource->priv->input = G_INPUT_STREAM (g_value_dup_object (value));
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -162,5 +162,37 @@ axing_resource_get_file (AxingResource *resource)
 GInputStream *
 axing_resource_get_input_stream (AxingResource *resource)
 {
-    return resource->priv->stream;
+    return resource->priv->input;
+}
+
+GInputStream *
+axing_resource_read (AxingResource  *resource,
+                     GCancellable   *cancellable,
+                     GError        **error)
+{
+    if (resource->priv->input) {
+        return resource->priv->input;
+    }
+    else {
+        return (GInputStream *) g_file_read (resource->priv->file,
+                                             cancellable,
+                                             error);
+    }
+}
+
+void
+axing_resource_read_async (AxingResource       *resource,
+                           GCancellable        *cancellable,
+                           GAsyncReadyCallback  callback,
+                           gpointer             user_data)
+{
+    /* FIXME */
+}
+
+GInputStream *
+axing_resource_read_finish (AxingResource *resource,
+                            GAsyncResult  *res,
+                            GError       **error)
+{
+    /* FIXME */
 }
