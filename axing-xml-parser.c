@@ -219,8 +219,8 @@ static void         namespace_map_interface_init (AxingNamespaceMapInterface *if
 static const char * namespace_map_get_namespace  (AxingNamespaceMap   *map,
                                                   const char          *prefix);
 
-static void      context_file_read_cb           (GFile                *file,
-                                                 GAsyncResult         *res,
+static void      context_resource_read_cb       (AxingResource        *resource,
+                                                 GAsyncResult         *result,
                                                  ParserContext        *context);
 static void      context_start_async            (ParserContext        *context);
 static void      context_start_cb               (GBufferedInputStream *stream,
@@ -662,14 +662,19 @@ axing_xml_parser_parse_init (AxingXmlParser *parser,
         parser->priv->cancellable = g_object_ref (cancellable);
 
     file = axing_resource_get_file (parser->priv->resource);
-    parsename = g_file_get_parse_name (file);
-    slash = strrchr (parsename, '/');
-    if (slash) {
-        parser->priv->context->basename = g_strdup (slash + 1);
-        g_free (parsename);
+    if (file) {
+        parsename = g_file_get_parse_name (file);
+        slash = strrchr (parsename, '/');
+        if (slash) {
+            parser->priv->context->basename = g_strdup (slash + 1);
+            g_free (parsename);
+        }
+        else {
+            parser->priv->context->basename = parsename;
+        }
     }
     else {
-        parser->priv->context->basename = parsename;
+        parser->priv->context->basename = g_strdup ("-");
     }
 }
 
@@ -749,19 +754,10 @@ axing_xml_parser_parse_async (AxingXmlParser      *parser,
                                                       callback, user_data,
                                                       axing_xml_parser_parse_async);
 
-    stream = axing_resource_get_input_stream (parser->priv->resource);
-    if (stream == NULL) {
-        file = axing_resource_get_file (parser->priv->resource);
-        g_file_read_async (file,
-                           G_PRIORITY_DEFAULT,
-                           parser->priv->cancellable,
-                           (GAsyncReadyCallback) context_file_read_cb,
-                           parser->priv->context);
-    }
-    else {
-        parser->priv->context->srcstream = g_object_ref (stream);
-        context_start_async (parser->priv->context);
-    }
+    axing_resource_read_async (parser->priv->resource,
+                               parser->priv->cancellable,
+                               (GAsyncReadyCallback) context_resource_read_cb,
+                               parser->priv->context);
 }
 
 void
@@ -833,13 +829,12 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 
 
 static void
-context_file_read_cb (GFile         *file,
-                      GAsyncResult  *res,
-                      ParserContext *context)
+context_resource_read_cb (AxingResource *resource,
+                          GAsyncResult  *result,
+                          ParserContext *context)
 {
-    context->srcstream = G_INPUT_STREAM (g_file_read_finish (file, res,
-                                                             &(context->parser->priv->error)));
-
+    context->srcstream = G_INPUT_STREAM (axing_resource_read_finish (resource, result,
+                                                                     &(context->parser->priv->error)));
     if (context->parser->priv->error) {
         g_simple_async_result_complete (context->parser->priv->result);
         return;

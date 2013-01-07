@@ -26,6 +26,7 @@
 struct _AxingResourcePrivate {
     GFile *file;
     GInputStream *input;
+    GSimpleAsyncResult *result;
 };
 
 static void      axing_resource_init          (AxingResource       *resource);
@@ -96,6 +97,10 @@ axing_resource_dispose (GObject *object)
     if (resource->priv->input) {
         g_object_unref (resource->priv->input);
         resource->priv->input = NULL;
+    }
+    if (resource->priv->result) {
+        g_object_unref (resource->priv->result);
+        resource->priv->result = NULL;
     }
     G_OBJECT_CLASS (axing_resource_parent_class)->dispose (object);
 }
@@ -180,13 +185,42 @@ axing_resource_read (AxingResource  *resource,
     }
 }
 
+static void
+resource_file_read_cb (GFile         *file,
+                       GAsyncResult  *result,
+                       AxingResource *resource)
+{
+    GError *error = NULL;
+
+    resource->priv->input = G_INPUT_STREAM (g_file_read_finish (file, result, &error));
+
+    if (error) {
+        g_simple_async_result_set_from_error (resource->priv->result, error);
+        g_error_free (error);
+    }
+
+    g_simple_async_result_complete (resource->priv->result);
+}
+
 void
 axing_resource_read_async (AxingResource       *resource,
                            GCancellable        *cancellable,
                            GAsyncReadyCallback  callback,
                            gpointer             user_data)
 {
-    /* FIXME */
+    resource->priv->result = g_simple_async_result_new (G_OBJECT (resource),
+                                                        callback, user_data,
+                                                        axing_resource_read_async);
+    if (resource->priv->input) {
+        g_simple_async_result_complete_in_idle (resource->priv->result);
+    }
+    else {
+        g_file_read_async (resource->priv->file,
+                           G_PRIORITY_DEFAULT,
+                           cancellable,
+                           (GAsyncReadyCallback) resource_file_read_cb,
+                           resource);
+    }
 }
 
 GInputStream *
@@ -194,5 +228,10 @@ axing_resource_read_finish (AxingResource *resource,
                             GAsyncResult  *res,
                             GError       **error)
 {
-    /* FIXME */
+    g_simple_async_result_propagate_error (resource->priv->result, error);
+
+    if (resource->priv->input)
+        return g_object_ref (resource->priv->input);
+    else
+        return NULL;
 }
