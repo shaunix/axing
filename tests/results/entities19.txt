@@ -1,0 +1,2 @@
+[ doc |doc ()
+error: entities19.xml(&foo;):1:5:Syntax error.

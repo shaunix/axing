@@ -911,9 +911,13 @@ context_check_end (ParserContext *context)
                                                 ParserStackFrame,
                                                 context->parser->priv->event_stack->len - 1);
         ERROR_MISSINGEND(context, frame.qname);
-    error:
-        return;
     }
+    if (context->state != context->init_state &&
+        !(context->state == PARSER_STATE_EPILOG && context->init_state == PARSER_STATE_PROLOG)) {
+        ERROR_SYNTAX(context);
+    }
+ error:
+    return;
 }
 
 static void
