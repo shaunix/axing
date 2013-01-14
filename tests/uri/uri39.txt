@@ -1,0 +1,3 @@
+http://a/b/c/d;p?q
+g?y/../x
+http://a/b/c/g?y/../x

@@ -6,3 +6,6 @@ for xml in tests/xml/*.xml; do
     test -f $txt && ./$prog $xml | cmp -s - $txt || (echo $prog:$xml; exit 1; ) || break;
 done
 done
+for uri in tests/uri/*.txt; do
+    ./test-axing-uri-resolver $uri || break;
+done
