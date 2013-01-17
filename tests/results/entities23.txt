@@ -1,0 +1,10 @@
+[ doc |doc ()
+  # %0A
+  [ two |two ()
+  ] two |two ()
+  # %0A%0A
+  [ elements |elements ()
+  ] elements |elements ()
+  # %0A%0A
+] doc |doc ()
+finish

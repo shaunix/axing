@@ -312,6 +312,69 @@ axing_dtd_schema_get_entity (AxingDtdSchema *dtd,
 }
 
 char *
+axing_dtd_schema_get_external_entity (AxingDtdSchema *dtd,
+                                      const char     *name)
+{
+    EntityData *data;
+
+    g_return_val_if_fail (dtd && AXING_IS_DTD_SCHEMA (dtd), FALSE);
+
+    data = (EntityData *) g_hash_table_lookup (dtd->priv->general_entities, name);
+
+    if (data == NULL)
+        return NULL;
+
+    if (data->ndata != NULL)
+        return NULL;
+
+    return g_strdup (data->system);
+}
+
+char *
+axing_dtd_schema_get_unparsed_entity (AxingDtdSchema *dtd,
+                                      const char     *name)
+{
+    EntityData *data;
+
+    g_return_val_if_fail (dtd && AXING_IS_DTD_SCHEMA (dtd), FALSE);
+
+    data = (EntityData *) g_hash_table_lookup (dtd->priv->general_entities, name);
+
+    if (data == NULL)
+        return NULL;
+
+    if (data->ndata == NULL)
+        return NULL;
+
+    return g_strdup (data->system);
+}
+
+gboolean
+axing_dtd_schema_get_entity_full (AxingDtdSchema  *dtd,
+                                  const char      *name,
+                                  char           **value,
+                                  char           **public,
+                                  char           **system,
+                                  char           **ndata)
+{
+    EntityData *data;
+
+    g_return_val_if_fail (dtd && AXING_IS_DTD_SCHEMA (dtd), FALSE);
+
+    data = (EntityData *) g_hash_table_lookup (dtd->priv->general_entities, name);
+
+    if (data == NULL)
+        return FALSE;
+
+    *value = g_strdup (data->value);
+    *public = g_strdup (data->public);
+    *system = g_strdup (data->system);
+    *ndata = g_strdup (data->ndata);
+
+    return TRUE;
+}
+
+char *
 axing_dtd_schema_get_parameter (AxingDtdSchema *dtd,
                                 const char     *name)
 {

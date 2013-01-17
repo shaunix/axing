@@ -7,6 +7,7 @@ test-axing-parser-async: *.c *.h
 	axing-namespace-map.c \
 	axing-resolver.c \
 	axing-resource.c \
+	axing-simple-resolver.c \
 	axing-stream.c \
 	axing-xml-parser.c \
 	axing-utils.c \
@@ -19,6 +20,7 @@ test-axing-parser-sync: *.c *.h
 	axing-namespace-map.c \
 	axing-resolver.c \
 	axing-resource.c \
+	axing-simple-resolver.c \
 	axing-stream.c \
 	axing-xml-parser.c \
 	axing-utils.c \

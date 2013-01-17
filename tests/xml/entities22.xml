@@ -1,0 +1,6 @@
+<!DOCTYPE doc [
+<!ENTITY foo SYSTEM "entities22-1.inc">
+]>
+<doc>
+<element attr="&foo;"/>
+</doc>

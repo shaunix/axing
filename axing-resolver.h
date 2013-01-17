@@ -52,14 +52,16 @@ struct _AxingResolverClass {
     /*< public >*/
     AxingResource *  (* resolve)          (AxingResolver       *resolver,
                                            AxingResource       *base,
-                                           const char          *uri,
+                                           const char          *xml_base,
+                                           const char          *link,
                                            const char          *pubid,
                                            const char          *hint,
                                            GCancellable        *cancellable,
                                            GError             **error);
     void             (* resolve_async)    (AxingResolver       *resolver,
                                            AxingResource       *base,
-                                           const char          *uri,
+                                           const char          *xml_base,
+                                           const char          *link,
                                            const char          *pubid,
                                            const char          *hint,
                                            GCancellable        *cancellable,
@@ -79,16 +81,20 @@ struct _AxingResolverClass {
 
 GType            axing_resolver_get_type         (void);
 
+AxingResolver *  axing_resolver_get_default      (void);
+
 AxingResource *  axing_resolver_resolve          (AxingResolver       *resolver,
                                                   AxingResource       *base,
-                                                  const char          *uri,
+                                                  const char          *xml_base,
+                                                  const char          *link,
                                                   const char          *pubid,
                                                   const char          *hint,
                                                   GCancellable        *cancellable,
                                                   GError             **error);
 void             axing_resolver_resolve_async    (AxingResolver       *resolver,
                                                   AxingResource       *base,
-                                                  const char          *uri,
+                                                  const char          *xml_base,
+                                                  const char          *link,
                                                   const char          *pubid,
                                                   const char          *hint,
                                                   GCancellable        *cancellable,

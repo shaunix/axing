@@ -1,0 +1,12 @@
+[ doc |doc ()
+  # %0Atext%20
+  [ b |b ()
+    # with
+  ] b |b ()
+  # %20
+  [ i |i ()
+    # markup
+  ] i |i ()
+  # %0A%0A
+] doc |doc ()
+finish

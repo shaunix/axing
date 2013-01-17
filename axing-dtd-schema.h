@@ -114,6 +114,16 @@ gboolean          axing_dtd_schema_add_notation             (AxingDtdSchema  *dt
 
 char *            axing_dtd_schema_get_entity               (AxingDtdSchema  *dtd,
                                                              const char      *name);
+char *            axing_dtd_schema_get_external_entity      (AxingDtdSchema  *dtd,
+                                                             const char      *name);
+char *            axing_dtd_schema_get_unparsed_entity      (AxingDtdSchema  *dtd,
+                                                             const char      *name);
+gboolean          axing_dtd_schema_get_entity_full          (AxingDtdSchema  *dtd,
+                                                             const char      *name,
+                                                             char           **value,
+                                                             char           **public,
+                                                             char           **system,
+                                                             char           **ndata);
 char *            axing_dtd_schema_get_parameter            (AxingDtdSchema  *dtd,
                                                              const char      *name);
 

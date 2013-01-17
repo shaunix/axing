@@ -21,6 +21,7 @@
  */
 
 #include "axing-resolver.h"
+#include "axing-simple-resolver.h"
 
 struct _AxingResolverPrivate {
     gpointer reserved;
@@ -35,7 +36,7 @@ static void
 axing_resolver_init (AxingResolver *resolver)
 {
     resolver->priv = G_TYPE_INSTANCE_GET_PRIVATE (resolver, AXING_TYPE_RESOLVER,
-                                                AxingResolverPrivate);
+                                                  AxingResolverPrivate);
 }
 
 static void
@@ -44,10 +45,22 @@ axing_resolver_class_init (AxingResolverClass *klass)
     g_type_class_add_private (klass, sizeof (AxingResolverPrivate));
 }
 
+static AxingResolver *default_resolver;
+
+AxingResolver *
+axing_resolver_get_default (void)
+{
+    if (!default_resolver)
+        default_resolver = axing_simple_resolver_new ();
+
+    return g_object_ref (default_resolver);
+}
+
 AxingResource *
 axing_resolver_resolve (AxingResolver *resolver,
                         AxingResource *base,
-                        const char    *uri,
+                        const char    *xml_base,
+                        const char    *link,
                         const char    *pubid,
                         const char    *hint,
                         GCancellable  *cancellable,
@@ -55,13 +68,14 @@ axing_resolver_resolve (AxingResolver *resolver,
 {
     AxingResolverClass *klass = AXING_RESOLVER_GET_CLASS (resolver);
     g_assert (klass->resolve != NULL);
-    return klass->resolve (resolver, base, uri, pubid, hint, cancellable, error);
+    return klass->resolve (resolver, base, xml_base, link, pubid, hint, cancellable, error);
 }
 
 void
 axing_resolver_resolve_async (AxingResolver       *resolver,
                               AxingResource       *base,
-                              const char          *uri,
+                              const char          *xml_base,
+                              const char          *link,
                               const char          *pubid,
                               const char          *hint,
                               GCancellable        *cancellable,
@@ -70,7 +84,7 @@ axing_resolver_resolve_async (AxingResolver       *resolver,
 {
     AxingResolverClass *klass = AXING_RESOLVER_GET_CLASS (resolver);
     g_assert (klass->resolve_async != NULL);
-    return klass->resolve_async (resolver, base, uri, pubid, hint, cancellable, callback, user_data);
+    return klass->resolve_async (resolver, base, xml_base, link, pubid, hint, cancellable, callback, user_data);
 }
 
 AxingResource *

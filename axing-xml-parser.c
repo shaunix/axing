@@ -118,8 +118,10 @@ attribute_data_free (AttributeData *data) {
     g_free (data->namespace); g_free (data->value); g_free (data);
 }
 
-typedef struct {
+typedef struct _ParserContext ParserContext;
+struct _ParserContext {
     AxingXmlParser    *parser;
+    AxingResource     *resource;
     GInputStream      *srcstream;
     GDataInputStream  *datastream;
     char              *basename;
@@ -139,6 +141,7 @@ typedef struct {
     int            attr_linenum;
     int            attr_colnum;
 
+    char          *pause_line;
     char          *cur_qname;
     char          *cur_attrname;
     char           quotechar;
@@ -150,12 +153,15 @@ typedef struct {
     char          *decl_public;
     gboolean       decl_pedef;
     char          *decl_ndata;
-} ParserContext;
+
+    ParserContext *parent;
+};
 
 struct _AxingXmlParserPrivate {
     gboolean    async;
 
     AxingResource      *resource;
+    AxingResolver      *resolver;
     ParserContext      *context;
     GCancellable       *cancellable;
     GSimpleAsyncResult *result;
@@ -222,6 +228,7 @@ static const char * namespace_map_get_namespace  (AxingNamespaceMap   *map,
 static void      context_resource_read_cb       (AxingResource        *resource,
                                                  GAsyncResult         *result,
                                                  ParserContext        *context);
+static void      context_parse_sync             (ParserContext        *context);
 static void      context_start_async            (ParserContext        *context);
 static void      context_start_cb               (GBufferedInputStream *stream,
                                                  GAsyncResult         *res,
@@ -264,6 +271,17 @@ static void      context_parse_entity           (ParserContext        *context,
 static void      context_parse_text             (ParserContext        *context,
                                                  char                **line);
 static void      context_trigger_start_element  (ParserContext        *context);
+static void      context_complete               (ParserContext        *context);
+static void      context_process_entity         (ParserContext        *context,
+                                                 const char           *entname,
+                                                 char                **line);
+static void      context_process_entity_resolved(AxingResolver        *resolver,
+                                                 GAsyncResult         *result,
+                                                 ParserContext        *context);
+static void      context_process_entity_finish  (ParserContext        *contetext);
+
+
+static char *    resource_get_basename          (AxingResource        *resource);
 
 static ParserContext * context_new              (AxingXmlParser       *parser);
 static void            context_free             (ParserContext        *context);
@@ -272,6 +290,7 @@ static void            context_free             (ParserContext        *context);
 enum {
     PROP_0,
     PROP_RESOURCE,
+    PROP_RESOLVER,
     N_PROPS
 };
 
@@ -321,6 +340,12 @@ axing_xml_parser_class_init (AxingXmlParserClass *klass)
                                                           AXING_TYPE_RESOURCE,
                                                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
                                                           G_PARAM_STATIC_STRINGS));
+    g_object_class_install_property (object_class, PROP_RESOURCE,
+                                     g_param_spec_object ("resolver",
+                                                          N_("resolver"),
+                                                          N_("The AxingResolver to use to resolve references"),
+                                                          AXING_TYPE_RESOLVER,
+                                                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 #ifdef FIXME
 transport-encoding
 declared-encoding
@@ -335,6 +360,11 @@ axing_xml_parser_dispose (GObject *object)
     if (parser->priv->resource) {
         g_object_unref (parser->priv->resource);
         parser->priv->resource = NULL;
+    }
+
+    if (parser->priv->resolver) {
+        g_object_unref (parser->priv->resolver);
+        parser->priv->resolver = NULL;
     }
 
     if (parser->priv->context) {
@@ -386,6 +416,9 @@ axing_xml_parser_get_property (GObject    *object,
     case PROP_RESOURCE:
         g_value_set_object (value, parser->priv->resource);
         break;
+    case PROP_RESOLVER:
+        g_value_set_object (value, parser->priv->resolver);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
@@ -403,6 +436,11 @@ axing_xml_parser_set_property (GObject      *object,
         if (parser->priv->resource)
             g_object_unref (parser->priv->resource);
         parser->priv->resource = AXING_RESOURCE (g_value_dup_object (value));
+        break;
+    case PROP_RESOLVER:
+        if (parser->priv->resolver)
+            g_object_unref (parser->priv->resolver);
+        parser->priv->resolver = AXING_RESOLVER (g_value_dup_object (value));
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -652,30 +690,16 @@ axing_xml_parser_parse_init (AxingXmlParser *parser,
                              GCancellable   *cancellable)
 {
     GFile *file;
-    char *parsename;
-    const char *slash;
 
     parser->priv->context = context_new (parser);
     parser->priv->context->state = PARSER_STATE_START;
 
+    parser->priv->context->resource = g_object_ref (parser->priv->resource);
+
     if (cancellable)
         parser->priv->cancellable = g_object_ref (cancellable);
 
-    file = axing_resource_get_file (parser->priv->resource);
-    if (file) {
-        parsename = g_file_get_parse_name (file);
-        slash = strrchr (parsename, '/');
-        if (slash) {
-            parser->priv->context->basename = g_strdup (slash + 1);
-            g_free (parsename);
-        }
-        else {
-            parser->priv->context->basename = parsename;
-        }
-    }
-    else {
-        parser->priv->context->basename = g_strdup ("-");
-    }
+    parser->priv->context->basename = resource_get_basename (parser->priv->resource);
 }
 
 void
@@ -683,47 +707,14 @@ axing_xml_parser_parse (AxingXmlParser  *parser,
                         GCancellable    *cancellable,
                         GError         **error)
 {
-    char *line;
-
     g_return_if_fail (parser->priv->context == NULL);
 
     axing_xml_parser_parse_init (parser, cancellable);
 
     parser->priv->async = FALSE;
 
-    parser->priv->context->srcstream = axing_resource_read (parser->priv->resource,
-                                                            cancellable,
-                                                            &(parser->priv->error));
-    if (parser->priv->error)
-        goto error;
+    context_parse_sync (parser->priv->context);
 
-    parser->priv->context->datastream = g_data_input_stream_new (parser->priv->context->srcstream);
-    g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (parser->priv->context->datastream),
-                                  1024,
-                                  parser->priv->cancellable,
-                                  &(parser->priv->error));
-    if (parser->priv->error)
-        goto error;
-
-    context_parse_xml_decl (parser->priv->context);
-    if (parser->priv->error)
-        goto error;
-
-    g_data_input_stream_set_newline_type (parser->priv->context->datastream,
-                                          G_DATA_STREAM_NEWLINE_TYPE_ANY);
-    while ((line = g_data_input_stream_read_line (parser->priv->context->datastream, NULL,
-                                                  parser->priv->cancellable,
-                                                  &(parser->priv->error)) )) {
-        if (parser->priv->error)
-            goto error;
-        parser->priv->context->linenum++;
-        parser->priv->context->colnum = 1;
-        context_parse_line (parser->priv->context, line);
-    }
-    if (line == NULL && parser->priv->error == NULL)
-        context_check_end (parser->priv->context);
-
- error:
     context_free (parser->priv->context);
     parser->priv->context = NULL;
     if (parser->priv->error) {
@@ -733,6 +724,48 @@ axing_xml_parser_parse (AxingXmlParser  *parser,
             g_error_free (parser->priv->error);
         parser->priv->error = NULL;
     }
+}
+
+static void
+context_parse_sync (ParserContext *context)
+{
+    char *line;
+
+    context->srcstream = axing_resource_read (context->resource,
+                                              context->parser->priv->cancellable,
+                                              &(context->parser->priv->error));
+    if (context->parser->priv->error)
+        goto error;
+
+    context->datastream = g_data_input_stream_new (context->srcstream);
+    if (context->state == PARSER_STATE_START) {
+        g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
+                                      1024,
+                                      context->parser->priv->cancellable,
+                                      &(context->parser->priv->error));
+        if (context->parser->priv->error)
+            goto error;
+        context_parse_xml_decl (context);
+        if (context->parser->priv->error)
+            goto error;
+    }
+
+    g_data_input_stream_set_newline_type (context->datastream,
+                                          G_DATA_STREAM_NEWLINE_TYPE_ANY);
+    while ((line = g_data_input_stream_read_line (context->datastream, NULL,
+                                                  context->parser->priv->cancellable,
+                                                  &(context->parser->priv->error)) )) {
+        if (context->parser->priv->error)
+            goto error;
+        context->linenum++;
+        context->colnum = 1;
+        context_parse_line (context, line);
+    }
+    if (line == NULL && context->parser->priv->error == NULL)
+        context_check_end (context);
+
+ error:
+    return;
 }
 
 void
@@ -836,7 +869,7 @@ context_resource_read_cb (AxingResource *resource,
     context->srcstream = G_INPUT_STREAM (axing_resource_read_finish (resource, result,
                                                                      &(context->parser->priv->error)));
     if (context->parser->priv->error) {
-        g_simple_async_result_complete (context->parser->priv->result);
+        context_complete (context);
         return;
     }
     context_start_async (context);
@@ -861,10 +894,12 @@ context_start_cb (GBufferedInputStream *stream,
                   ParserContext        *context)
 {
     g_buffered_input_stream_fill_finish (stream, res, NULL);
-    context_parse_xml_decl (context);
-    if (context->parser->priv->error) {
-        g_simple_async_result_complete (context->parser->priv->result);
-        return;
+    if (context->state == PARSER_STATE_START) {
+        context_parse_xml_decl (context);
+        if (context->parser->priv->error) {
+            context_complete (context);
+            return;
+        }
     }
     g_data_input_stream_set_newline_type (context->datastream,
                                           G_DATA_STREAM_NEWLINE_TYPE_ANY);
@@ -882,25 +917,33 @@ context_read_line_cb (GDataInputStream *stream,
 {
     gchar *line;
     if (context->parser->priv->error) {
-        g_simple_async_result_complete (context->parser->priv->result);
+        context_complete (context);
         return;
     }
-    line = g_data_input_stream_read_line_finish (stream, res, NULL, &(context->parser->priv->error));
-    if (line == NULL && context->parser->priv->error == NULL) {
-        context_check_end (context);
+    if (context->pause_line) {
+        line = context->pause_line;
+        context->pause_line = NULL;
     }
-    if (line == NULL || context->parser->priv->error) {
-        g_simple_async_result_complete (context->parser->priv->result);
-        return;
+    else {
+        line = g_data_input_stream_read_line_finish (stream, res, NULL, &(context->parser->priv->error));
+        if (line == NULL && context->parser->priv->error == NULL) {
+            context_check_end (context);
+        }
+        if (line == NULL || context->parser->priv->error) {
+            context_complete (context);
+            return;
+        }
+        context->linenum++;
+        context->colnum = 1;
     }
-    context->linenum++;
-    context->colnum = 1;
-    context_parse_line (context, line);
-    g_data_input_stream_read_line_async (context->datastream,
-                                         G_PRIORITY_DEFAULT,
-                                         context->parser->priv->cancellable,
-                                         (GAsyncReadyCallback) context_read_line_cb,
-                                         context);
+    context_parse_line (context, line);\
+    g_free (line);
+    if (context->pause_line == NULL)
+        g_data_input_stream_read_line_async (context->datastream,
+                                             G_PRIORITY_DEFAULT,
+                                             context->parser->priv->cancellable,
+                                             (GAsyncReadyCallback) context_read_line_cb,
+                                             context);
 }
 
 static void
@@ -1056,7 +1099,7 @@ context_parse_line (ParserContext *context, char *line)
         return;
     }
     context_parse_data (context, line);
-    if (context->state == PARSER_STATE_TEXT) {
+    if (context->pause_line == NULL && context->state == PARSER_STATE_TEXT) {
         if (context->cur_text == NULL)
             context->cur_text = g_string_new (NULL);
         g_string_append_c (context->cur_text, 0xA);
@@ -2649,13 +2692,98 @@ context_parse_entity (ParserContext *context, char **line)
             g_string_append_c (context->cur_text, builtin);
         }
         else {
-            char *value = axing_dtd_schema_get_entity (context->parser->priv->doctype, entname);
-            if (value) {
-                ParserContext *entctxt = context_new (context->parser);
-                /* not duping these two, NULL them before free below */
-                entctxt->basename = context->basename;
-                entctxt->entname = entname;
-                entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
+            context_process_entity (context, entname, line);
+        }
+    }
+ error:
+    context->colnum = colnum;
+    g_free (entname);
+}
+
+static void
+context_process_entity (ParserContext *context, const char *entname, char **line)
+{
+    char *value=NULL, *system=NULL, *public=NULL, *ndata=NULL;
+    if (axing_dtd_schema_get_entity_full (context->parser->priv->doctype, entname,
+                                          &value, &public, &system, &ndata)) {
+        if (value) {
+            ParserContext *entctxt = context_new (context->parser);
+            /* not duping these two, NULL them before free below */
+            entctxt->basename = context->basename;
+            entctxt->entname = (char *) entname;
+            entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
+            entctxt->state = context->state;
+            entctxt->init_state = context->state;
+            entctxt->linenum = 1;
+            entctxt->colnum = 1;
+            entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+            entctxt->cur_text = context->cur_text;
+            context->cur_text = NULL;
+
+            context_parse_data (entctxt, value);
+            if (entctxt->parser->priv->error == NULL)
+                context_check_end (entctxt);
+
+            context->state = entctxt->state;
+            context->cur_text = entctxt->cur_text;
+            entctxt->cur_text = NULL;
+            entctxt->basename = NULL;
+            entctxt->entname = NULL;
+            context_free (entctxt);
+        }
+        else if (ndata) {
+            ERROR_FIXME(context);
+        }
+        else {
+            AxingResolver *resolver;
+
+            if (context->state == PARSER_STATE_STELM_ATTVAL) {
+                ERROR_ENTITY(context);
+            }
+
+            if (context->parser->priv->resolver)
+                resolver = g_object_ref (context->parser->priv->resolver);
+            else
+                resolver = axing_resolver_get_default ();
+
+            if (context->parser->priv->async) {
+                ParserContext *entctxt;
+                entctxt = context_new (context->parser);
+                entctxt->parent = context;
+                entctxt->entname = g_strdup (entname);
+                entctxt->state = context->state;
+                entctxt->init_state = context->state;
+                entctxt->linenum = 1;
+                entctxt->colnum = 1;
+                entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+                entctxt->cur_text = context->cur_text;
+                context->cur_text = NULL;
+                axing_resolver_resolve_async (resolver, context->resource,
+                                              NULL, system, public, "xml:entity",
+                                              context->parser->priv->cancellable,
+                                              (GAsyncReadyCallback) context_process_entity_resolved,
+                                              entctxt);
+                context->pause_line = g_strdup (*line);
+                while ((*line)[0])
+                    (*line)++;
+            }
+            else {
+                ParserContext *entctxt;
+                AxingResource *resource;
+                GFile *file;
+                resource = axing_resolver_resolve (resolver, context->resource,
+                                                   NULL, system, public, "xml:entity",
+                                                   context->parser->priv->cancellable,
+                                                   &(context->parser->priv->error));
+                if (context->parser->priv->error) {
+                    g_object_unref (resolver);
+                    goto error;
+                }
+
+                entctxt = context_new (context->parser);
+                entctxt->resource = resource;
+                entctxt->basename = resource_get_basename (resource);
+                entctxt->entname = g_strdup (entname);
                 entctxt->state = context->state;
                 entctxt->init_state = context->state;
                 entctxt->linenum = 1;
@@ -2664,27 +2792,61 @@ context_parse_entity (ParserContext *context, char **line)
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
 
-                context_parse_data (entctxt, value);
-                if (entctxt->parser->priv->error == NULL)
-                    context_check_end (entctxt);
+                context_parse_sync (entctxt);
 
                 context->state = entctxt->state;
                 context->cur_text = entctxt->cur_text;
                 entctxt->cur_text = NULL;
-                entctxt->basename = NULL;
-                entctxt->entname = NULL;
                 context_free (entctxt);
-                g_free (value);
-            }
-            else {
-                ERROR_FIXME(context);
+                g_object_unref (resolver);
             }
         }
     }
  error:
-    context->colnum = colnum;
-    g_free (entname);
+    g_free (value);
+    g_free (public);
+    g_free (system);
+    g_free (ndata);
 }
+
+static void
+context_process_entity_resolved (AxingResolver *resolver,
+                                 GAsyncResult  *result,
+                                 ParserContext *context)
+{
+    AxingResource *resource;
+
+    resource = axing_resolver_resolve_finish (resolver, result,
+                                              &(context->parser->priv->error));
+    if (context->parser->priv->error)
+        goto error;
+
+    context->resource = resource;
+    context->basename = resource_get_basename (resource);
+
+    axing_resource_read_async (context->resource,
+                               context->parser->priv->cancellable,
+                               (GAsyncReadyCallback) context_resource_read_cb,
+                               context);
+ error:
+    g_object_unref (resolver);
+}
+
+static void
+context_process_entity_finish (ParserContext *context)
+{
+    ParserContext *parent;
+    parent = context->parent;
+    context->parent = NULL;
+
+    parent->state = context->state;
+    parent->cur_text = context->cur_text;
+    context->cur_text = NULL;
+    context_free (context);
+
+    context_read_line_cb (NULL, NULL, parent);
+}
+
 
 static void
 context_parse_text (ParserContext *context, char **line)
@@ -2866,6 +3028,40 @@ context_trigger_start_element (ParserContext *context)
     context->empty = FALSE;
 }
 
+static void
+context_complete (ParserContext *context)
+{
+    if (context->parent)
+        context_process_entity_finish (context);
+    else
+        g_simple_async_result_complete (context->parser->priv->result);
+}
+
+static char *
+resource_get_basename (AxingResource *resource)
+{
+    GFile *file = axing_resource_get_file (resource);
+    char *ret;
+    if (file) {
+        char *parsename;
+        const char *slash;
+        /* FIXME: slash in query/fragment */
+        parsename = g_file_get_parse_name (file);
+        slash = strrchr (parsename, '/');
+        if (slash) {
+            ret = g_strdup (slash + 1);
+            g_free (parsename);
+        }
+        else {
+            ret = parsename;
+        }
+    }
+    else {
+        ret = g_strdup ("-");
+    }
+    return ret;
+}
+
 static ParserContext *
 context_new (AxingXmlParser *parser)
 {
@@ -2887,6 +3083,8 @@ context_free (ParserContext *context)
 {
     if (context->parser)
         g_object_unref (context->parser);
+    if (context->resource)
+        g_object_unref (context->resource);
     if (context->srcstream)
         g_object_unref (context->srcstream);
     if (context->datastream)
@@ -2895,6 +3093,7 @@ context_free (ParserContext *context)
     g_free (context->basename);
     g_free (context->entname);
     g_free (context->showname);
+    g_free (context->pause_line);
     g_free (context->cur_qname);
     g_free (context->cur_attrname);
 
