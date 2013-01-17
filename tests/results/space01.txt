@@ -1,0 +1,4 @@
+[ space |space ()
+  @ after |after () element
+] space |space ()
+finish

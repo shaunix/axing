@@ -1154,7 +1154,7 @@ context_parse_data (ParserContext *context, char *line)
                     context_parse_start_element (context, &c);
                 }
             }
-            else if (context->state == PARSER_STATE_EPILOG) {
+            else if (context->state == PARSER_STATE_EPILOG && c[0] != '\0') {
                 ERROR_EXTRACONTENT(context);
             }
             else if (context->state == PARSER_STATE_TEXT) {
