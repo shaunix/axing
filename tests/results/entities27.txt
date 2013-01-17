@@ -1,0 +1,6 @@
+[ doc |doc ()
+  # %0A
+  [ one |one ()
+    [ two |two ()
+      [ three |three ()
+error: entities27-3.inc:2:8:Incorrect entity reference.

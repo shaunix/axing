@@ -2703,12 +2703,21 @@ context_parse_entity (ParserContext *context, char **line)
 static void
 context_process_entity (ParserContext *context, const char *entname, char **line)
 {
+    ParserContext *parent;
     char *value=NULL, *system=NULL, *public=NULL, *ndata=NULL;
+
+    for (parent = context->parent; parent != NULL; parent = parent->parent) {
+        if (parent->entname && g_str_equal (entname, parent->entname)) {
+            ERROR_ENTITY(context);
+        }
+    }
+
     if (axing_dtd_schema_get_entity_full (context->parser->priv->doctype, entname,
                                           &value, &public, &system, &ndata)) {
         if (value) {
             ParserContext *entctxt = context_new (context->parser);
             /* not duping these two, NULL them before free below */
+            entctxt->parent = context;
             entctxt->basename = context->basename;
             entctxt->entname = (char *) entname;
             entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
@@ -2781,6 +2790,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 }
 
                 entctxt = context_new (context->parser);
+                entctxt->parent = context;
                 entctxt->resource = resource;
                 entctxt->basename = resource_get_basename (resource);
                 entctxt->entname = g_strdup (entname);

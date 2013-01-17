@@ -1,0 +1,10 @@
+<!DOCTYPE doc [
+<!ENTITY one "<one>&two;</one>">
+<!ENTITY two "<two>&three;</two>">
+<!ENTITY three "<three>&four;</three>">
+<!ENTITY four "<four>&five;</four>">
+<!ENTITY five "<five>&one;</five>">
+]>
+<doc>
+&one;
+</doc>

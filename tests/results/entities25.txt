@@ -1,0 +1,7 @@
+[ doc |doc ()
+  # %0A
+  [ bar |bar ()
+  ] bar |bar ()
+  # %0A%0A%0A
+] doc |doc ()
+finish

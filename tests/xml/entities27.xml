@@ -1,0 +1,8 @@
+<!DOCTYPE doc [
+<!ENTITY one SYSTEM "entities27-1.inc">
+<!ENTITY two SYSTEM "entities27-2.inc">
+<!ENTITY three SYSTEM "entities27-3.inc">
+]>
+<doc>
+&one;
+</doc>

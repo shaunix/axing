@@ -1,0 +1,8 @@
+[ doc |doc ()
+  # %0A
+  [ one |one ()
+    [ two |two ()
+      [ three |three ()
+        [ four |four ()
+          [ five |five ()
+error: entities26.xml(&five;):1:7:Incorrect entity reference.
