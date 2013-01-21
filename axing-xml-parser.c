@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /*
- * Copyright (C) 2012 Shaun McCance  <shaunm@gnome.org>
+ * Copyright (C) 2012-2013 Shaun McCance  <shaunm@gnome.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -233,13 +233,11 @@ static void      context_start_async            (ParserContext        *context);
 static void      context_start_cb               (GBufferedInputStream *stream,
                                                  GAsyncResult         *res,
                                                  ParserContext        *context);
-static void      context_read_line_cb           (GDataInputStream     *stream,
+static void      context_read_data_cb           (GDataInputStream     *stream,
                                                  GAsyncResult         *res,
                                                  ParserContext        *context);
 static void      context_check_end              (ParserContext        *context);
 static void      context_parse_xml_decl         (ParserContext        *context);
-static void      context_parse_line             (ParserContext        *context,
-                                                 char                 *line);
 static void      context_parse_data             (ParserContext        *context,
                                                  char                 *line);
 static void      context_parse_doctype          (ParserContext        *context,
@@ -752,14 +750,26 @@ context_parse_sync (ParserContext *context)
 
     g_data_input_stream_set_newline_type (context->datastream,
                                           G_DATA_STREAM_NEWLINE_TYPE_ANY);
-    while ((line = g_data_input_stream_read_line (context->datastream, NULL,
+    while ((line = g_data_input_stream_read_upto (context->datastream, " ", -1, NULL,
                                                   context->parser->priv->cancellable,
                                                   &(context->parser->priv->error)) )) {
         if (context->parser->priv->error)
             goto error;
-        context->linenum++;
-        context->colnum = 1;
-        context_parse_line (context, line);
+        context_parse_data (context, line);
+        g_free (line);
+        if (context->parser->priv->error)
+            goto error;
+        if (g_buffered_input_stream_get_available (G_BUFFERED_INPUT_STREAM (context->datastream)) > 0) {
+            char eol[2] = {0, 0};
+            eol[0] = g_data_input_stream_read_byte (context->datastream,
+                                                    context->parser->priv->cancellable,
+                                                    &(context->parser->priv->error));
+            if (context->parser->priv->error)
+                goto error;
+            context_parse_data (context, eol);
+            if (context->parser->priv->error)
+                goto error;
+        }
     }
     if (line == NULL && context->parser->priv->error == NULL)
         context_check_end (context);
@@ -856,6 +866,27 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 /* FIXME: XML 1.1 newlines */
 #define EAT_SPACES(c, buf, bufsize, context) {gboolean aftercr = FALSE; while((bufsize < 0 || c - buf < bufsize) && XML_IS_SPACE(c[0])) {if (c[0] == 0x0D) { context->colnum = 1; context->linenum++; aftercr = TRUE; } else if (c[0] == 0x0A) { if (!aftercr) { context->colnum = 1; context->linenum++; } aftercr = FALSE; } else { context->colnum++; aftercr = FALSE; } (c)++; }}
 
+/* FIXME: XML 1.1 newlines */
+#define APPEND_CHAR(line, context)                              \
+    if ((*line)[0] == 0xA) {                                    \
+        g_string_append_c (context->cur_text, 0xA);             \
+        (*line)++; context->linenum++; context->colnum = 1;     \
+    }                                                           \
+    else if ((*line)[0] == 0xD) {                               \
+        g_string_append_c (context->cur_text, 0xA);             \
+        (*line)++; context->linenum++; context->colnum = 1;     \
+        if ((*line)[0] == 0xA)                                  \
+            (*line)++;                                          \
+    }                                                           \
+    else {                                                      \
+        char *next;                                             \
+        gsize bytes;                                            \
+        next = g_utf8_next_char (*line);                        \
+        bytes = next - *line;                                   \
+        g_string_append_len (context->cur_text, *line, bytes);  \
+        *line = next; context->colnum += 1;                     \
+    }
+
 #define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
 
 #define READ_TO_QUOTE(c, buf, bufsize, context, quot) EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '=') { ERROR_SYNTAX(context); } c += 1; context->colnum += 1; EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '"' && c[0] != '\'') { ERROR_SYNTAX(context); } quot = c[0]; c += 1; context->colnum += 1;
@@ -903,15 +934,16 @@ context_start_cb (GBufferedInputStream *stream,
     }
     g_data_input_stream_set_newline_type (context->datastream,
                                           G_DATA_STREAM_NEWLINE_TYPE_ANY);
-    g_data_input_stream_read_line_async (context->datastream,
+    g_data_input_stream_read_upto_async (context->datastream,
+                                         " ", -1,
                                          G_PRIORITY_DEFAULT,
                                          context->parser->priv->cancellable,
-                                         (GAsyncReadyCallback) context_read_line_cb,
+                                         (GAsyncReadyCallback) context_read_data_cb,
                                          context);
 }
 
 static void
-context_read_line_cb (GDataInputStream *stream,
+context_read_data_cb (GDataInputStream *stream,
                       GAsyncResult     *res,
                       ParserContext    *context)
 {
@@ -923,26 +955,56 @@ context_read_line_cb (GDataInputStream *stream,
     if (context->pause_line) {
         line = context->pause_line;
         context->pause_line = NULL;
+        context_parse_data (context, line);
+        g_free (line);
     }
     else {
-        line = g_data_input_stream_read_line_finish (stream, res, NULL, &(context->parser->priv->error));
+        line = g_data_input_stream_read_upto_finish (stream, res, NULL, &(context->parser->priv->error));
         if (line == NULL && context->parser->priv->error == NULL) {
+            /* https://bugzilla.gnome.org/show_bug.cgi?id=692101
+               g_data_input_stream_read_upto_finish returns NULL when it should return ""
+               when at one of the stop chars. This happens, e.g., when there are two stop
+               chars in a row. Checking the buffer is a workaround. The buffer will always
+               be non-empty for these false NULLs, because at least the one stop char must
+               be in the buffer for this to happen.
+             */
+            if (g_buffered_input_stream_get_available (G_BUFFERED_INPUT_STREAM (context->datastream)) > 0)
+                goto bug692101;
             context_check_end (context);
         }
         if (line == NULL || context->parser->priv->error) {
             context_complete (context);
             return;
         }
-        context->linenum++;
-        context->colnum = 1;
+        context_parse_data (context, line);
+        g_free (line);
+        if (context->parser->priv->error) {
+            context_complete (context);
+            return;
+        }
+    bug692101:
+        if (g_buffered_input_stream_get_available (G_BUFFERED_INPUT_STREAM (context->datastream)) > 0) {
+            char eol[2] = {0, 0};
+            eol[0] = g_data_input_stream_read_byte (context->datastream,
+                                                    context->parser->priv->cancellable,
+                                                    &(context->parser->priv->error));
+            if (context->parser->priv->error) {
+                context_complete (context);
+                return;
+            }
+            context_parse_data (context, eol);
+            if (context->parser->priv->error) {
+                context_complete (context);
+                return;
+            }
+        }
     }
-    context_parse_line (context, line);\
-    g_free (line);
     if (context->pause_line == NULL)
-        g_data_input_stream_read_line_async (context->datastream,
+        g_data_input_stream_read_upto_async (context->datastream,
+                                             " ", -1,
                                              G_PRIORITY_DEFAULT,
                                              context->parser->priv->cancellable,
-                                             (GAsyncReadyCallback) context_read_line_cb,
+                                             (GAsyncReadyCallback) context_read_data_cb,
                                              context);
 }
 
@@ -1092,23 +1154,14 @@ context_parse_xml_decl (ParserContext *context)
 }
 
 static void
-context_parse_line (ParserContext *context, char *line)
-{
-    if (line[0] == '\0' && context->cur_text != NULL) {
-        g_string_append_c (context->cur_text, 0xA);
-        return;
-    }
-    context_parse_data (context, line);
-    if (context->pause_line == NULL && context->state == PARSER_STATE_TEXT) {
-        if (context->cur_text == NULL)
-            context->cur_text = g_string_new (NULL);
-        g_string_append_c (context->cur_text, 0xA);
-    }
-}
-
-static void
 context_parse_data (ParserContext *context, char *line)
 {
+    /* The parsing functions make these assumptions about the data that gets passed in:
+       1) It always has complete UTF-8 characters.
+       2) It always terminates somewhere where a space is permissable, e.g. never in
+          the middle of an element name.
+       3) Mutli-character newline sequences are not split into separate chunks of data.
+     */
     char *c = line;
     while (c[0] != '\0') {
         switch (context->state) {
@@ -1296,11 +1349,7 @@ context_parse_doctype (ParserContext  *context,
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
                 ERROR_SYNTAX(context);
             }
-            g_string_append_c (context->cur_text, c);
-            (*line)++; context->colnum++;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_PUBLIC_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1321,9 +1370,6 @@ context_parse_doctype (ParserContext  *context,
 
     if (context->doctype_state == DOCTYPE_STATE_SYSTEM_VAL) {
         while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
             if ((*line)[0] == context->quotechar) {
                 char *system = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
@@ -1333,17 +1379,10 @@ context_parse_doctype (ParserContext  *context,
                 (*line)++; context->colnum++;
                 break;
             }
-            cp = g_utf8_get_char (*line);
-            if (!XML_IS_CHAR(cp, context)) {
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_SYSTEM_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1508,8 +1547,6 @@ context_parse_doctype_element (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_VALUE) {
         /* not checking the internal syntax here; valid chars only */
         while ((*line)[0] != '\0' && (*line)[0] != '>') {
-            char *next;
-            gsize bytes;
             if (!(XML_IS_NAME_CHAR (g_utf8_get_char (*line)) ||
                   XML_IS_SPACE ((*line)[0]) ||
                   (*line)[0] == '(' || (*line)[0] == ')' || (*line)[0] == '|' ||
@@ -1517,13 +1554,8 @@ context_parse_doctype_element (ParserContext *context, char **line) {
                   (*line)[0] == '?' || (*line)[0] == '#' )) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
+            APPEND_CHAR (line, context);
         }
-        if ((*line)[0] == '\0')
-            g_string_append_c (context->cur_text, 0xA);
         if ((*line)[0] == '>')
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
     }
@@ -1586,8 +1618,6 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_VALUE) {
         /* not checking the internal syntax here; valid chars only */
         while ((*line)[0] != '\0' && (*line)[0] != '>') {
-            char *next;
-            gsize bytes;
             if ((*line)[0] == '"') {
                 g_string_append_c (context->cur_text, '"');
                 (*line)++; context->colnum++;
@@ -1600,21 +1630,14 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
                   (*line)[0] == '(' || (*line)[0] == ')' )) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
+            APPEND_CHAR (line, context);
         }
-        if ((*line)[0] == '\0')
-            g_string_append_c (context->cur_text, 0xA);
         if ((*line)[0] == '>')
             context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_AFTER;
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_QUOTE) {
         while ((*line)[0] != '\0') {
-            char *next;
-            gsize bytes;
             if ((*line)[0] == '"') {
                 g_string_append_c (context->cur_text, '"');
                 (*line)++; context->colnum++;
@@ -1624,13 +1647,8 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
             if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
+            APPEND_CHAR (line, context);
         }
-        if ((*line)[0] == '\0')
-            g_string_append_c (context->cur_text, 0xA);
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_AFTER) {
@@ -1713,9 +1731,6 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
 
     if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL) {
         while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
             if ((*line)[0] == context->quotechar) {
                 context->decl_system = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
@@ -1723,17 +1738,10 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
                 (*line)++; context->colnum++;
                 break;
             }
-            cp = g_utf8_get_char (*line);
-            if (!XML_IS_CHAR(cp, context)) {
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1770,11 +1778,7 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
                 ERROR_SYNTAX(context);
             }
-            g_string_append_c (context->cur_text, c);
-            (*line)++; context->colnum++;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1887,26 +1891,16 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_VALUE) {
         while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
             if ((*line)[0] == context->quotechar) {
                 /* let the AFTER handler handle cur_text */
                 context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
                 (*line)++; context->colnum++;
                 break;
             }
-            cp = g_utf8_get_char (*line);
-            if (!XML_IS_CHAR(cp, context)) {
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_VALUE && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1943,11 +1937,7 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
                 ERROR_SYNTAX(context);
             }
-            g_string_append_c (context->cur_text, c);
-            (*line)++; context->colnum++;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -1968,9 +1958,6 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL) {
         while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
             if ((*line)[0] == context->quotechar) {
                 context->decl_system = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
@@ -1978,17 +1965,10 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
                 (*line)++; context->colnum++;
                 break;
             }
-            cp = g_utf8_get_char (*line);
-            if (!XML_IS_CHAR(cp, context)) {
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
-        }
-        if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL && (*line)[0] == '\0') {
-            g_string_append_c (context->cur_text, 0xA);
+            APPEND_CHAR (line, context);
         }
     }
 
@@ -2132,8 +2112,6 @@ context_parse_parameter (ParserContext  *context,
         entctxt->state = context->state;
         entctxt->init_state = context->state;
         entctxt->doctype_state = context->doctype_state;
-        entctxt->linenum = 1;
-        entctxt->colnum = 1;
         entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
         entctxt->cur_text = context->cur_text;
         context->cur_text = NULL;
@@ -2175,9 +2153,6 @@ context_parse_cdata (ParserContext *context, char **line)
     }
 
     while ((*line)[0] != '\0') {
-        gunichar cp;
-        char *next;
-        gsize bytes;
         if ((*line)[0] == ']' && (*line)[1] == ']' && (*line)[2] == '>') {
             (*line) += 3; context->colnum += 3;
 
@@ -2190,19 +2165,11 @@ context_parse_cdata (ParserContext *context, char **line)
             context->state = PARSER_STATE_TEXT;
             return;
         }
-        cp = g_utf8_get_char (*line);
-        if (!XML_IS_CHAR(cp, context)) {
+        if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
             ERROR_SYNTAX(context);
         }
-        next = g_utf8_next_char (*line);
-        bytes = next - *line;
-        /* FIXME: newlines */
-        g_string_append_len (context->cur_text, *line, bytes);
-        *line = next; context->colnum += 1;
+        APPEND_CHAR (line, context);
     }
-
-    if ((*line)[0] == '\0')
-        g_string_append_c (context->cur_text, 0xA);
 
  error:
     return;
@@ -2222,9 +2189,6 @@ context_parse_comment (ParserContext *context, char **line)
     }
 
     while ((*line)[0] != '\0') {
-        gunichar cp;
-        char *next;
-        gsize bytes;
         if ((*line)[0] == '-' && (*line)[1] == '-') {
             if ((*line)[2] != '>') {
                 ERROR_SYNTAX(context);
@@ -2247,19 +2211,11 @@ context_parse_comment (ParserContext *context, char **line)
             context->state = context->prev_state;
             return;
         }
-        cp = g_utf8_get_char (*line);
-        if (!XML_IS_CHAR(cp, context)) {
+        if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
             ERROR_SYNTAX(context);
         }
-        next = g_utf8_next_char (*line);
-        bytes = next - *line;
-        /* FIXME: newlines */
-        g_string_append_len (context->cur_text, *line, bytes);
-        *line = next; context->colnum += 1;
+        APPEND_CHAR (line, context);
     }
-
-    if ((*line)[0] == '\0')
-        g_string_append_c (context->cur_text, 0xA);
 
  error:
     return;
@@ -2287,9 +2243,6 @@ context_parse_instruction (ParserContext *context, char **line)
     }
 
     while ((*line)[0] != '\0') {
-        gunichar cp;
-        char *next;
-        gsize bytes;
         if ((*line)[0] == '?' && (*line)[1] == '>') {
             (*line) += 2; context->colnum += 2;
 
@@ -2309,19 +2262,11 @@ context_parse_instruction (ParserContext *context, char **line)
             context->state = context->prev_state;
             return;
         }
-        cp = g_utf8_get_char (*line);
-        if (!XML_IS_CHAR(cp, context)) {
+        if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
             ERROR_SYNTAX(context);
         }
-        next = g_utf8_next_char (*line);
-        bytes = next - *line;
-        /* FIXME: newlines */
-        g_string_append_len (context->cur_text, *line, bytes);
-        *line = next; context->colnum += 1;
+        APPEND_CHAR (line, context);
     }
-
-    if ((*line)[0] == '\0')
-        g_string_append_c (context->cur_text, 0xA);
 
  error:
     return;
@@ -2497,9 +2442,6 @@ context_parse_attrs (ParserContext *context, char **line)
     }
     if (context->state == PARSER_STATE_STELM_ATTVAL) {
         while ((*line)[0] != '\0') {
-            gunichar cp;
-            char *next;
-            gsize bytes;
             if ((*line)[0] == context->quotechar) {
                 char *xmlns = NULL;
                 char *attrval;
@@ -2579,14 +2521,10 @@ context_parse_attrs (ParserContext *context, char **line)
             else if ((*line)[0] == '<') {
                 ERROR_SYNTAX(context);
             }
-            cp = g_utf8_get_char (*line);
-            if (!XML_IS_CHAR(cp, context)) {
+            if (!XML_IS_CHAR(g_utf8_get_char (*line), context)) {
                 ERROR_SYNTAX(context);
             }
-            next = g_utf8_next_char (*line);
-            bytes = next - *line;
-            g_string_append_len (context->cur_text, *line, bytes);
-            *line = next; context->colnum += 1;
+            APPEND_CHAR (line, context);
         }
     }
  error:
@@ -2723,8 +2661,6 @@ context_process_entity (ParserContext *context, const char *entname, char **line
             entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
             entctxt->state = context->state;
             entctxt->init_state = context->state;
-            entctxt->linenum = 1;
-            entctxt->colnum = 1;
             entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
             entctxt->cur_text = context->cur_text;
             context->cur_text = NULL;
@@ -2762,8 +2698,6 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = context->state;
                 entctxt->init_state = context->state;
-                entctxt->linenum = 1;
-                entctxt->colnum = 1;
                 entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
@@ -2796,8 +2730,6 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = context->state;
                 entctxt->init_state = context->state;
-                entctxt->linenum = 1;
-                entctxt->colnum = 1;
                 entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
@@ -2854,25 +2786,24 @@ context_process_entity_finish (ParserContext *context)
     context->cur_text = NULL;
     context_free (context);
 
-    context_read_line_cb (NULL, NULL, parent);
+    context_read_data_cb (NULL, NULL, parent);
 }
 
 
 static void
 context_parse_text (ParserContext *context, char **line)
 {
-    gunichar cp;
-    char *next;
-    gsize bytes;
     while ((*line)[0] != '\0') {
         if ((*line)[0] == '<') {
-            g_free (context->parser->priv->event_content);
-            context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
-            context->cur_text = NULL;
-            context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
+            if (context->cur_text) {
+                g_free (context->parser->priv->event_content);
+                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                context->cur_text = NULL;
+                context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
 
-            g_signal_emit_by_name (context->parser, "stream-event");
-            parser_clean_event_data (context->parser);
+                g_signal_emit_by_name (context->parser, "stream-event");
+                parser_clean_event_data (context->parser);
+            }
             return;
         }
         if ((*line)[0] == '&') {
@@ -2884,15 +2815,10 @@ context_parse_text (ParserContext *context, char **line)
         if (context->cur_text == NULL) {
             context->cur_text = g_string_new (NULL);
         }
-        cp = g_utf8_get_char (*line);
-        if (!XML_IS_CHAR (cp, context)) {
+        if (!XML_IS_CHAR (g_utf8_get_char (*line), context)) {
             ERROR_SYNTAX(context);
         }
-        next = g_utf8_next_char (*line);
-        bytes = next - *line;
-        /* FIXME: newlines */
-        g_string_append_len (context->cur_text, *line, bytes);
-        *line = next; context->colnum += 1;
+        APPEND_CHAR (line, context);
     }
  error:
     return;
@@ -3080,7 +3006,7 @@ context_new (AxingXmlParser *parser)
     context = g_new0 (ParserContext, 1);
     context->state = PARSER_STATE_NONE;
     context->init_state = PARSER_STATE_PROLOG;
-    context->linenum = 0;
+    context->linenum = 1;
     context->colnum = 1;
     context->parser = g_object_ref (parser);
     context->event_stack_root = 0;

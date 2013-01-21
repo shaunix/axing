@@ -3,4 +3,4 @@
   [ a |a ()
     # %0A%0A
   ] a |a ()
-error: element05.xml:4:5:Missing end tag for "doc".
+error: element05.xml:5:1:Missing end tag for "doc".

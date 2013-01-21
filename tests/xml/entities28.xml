@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!ENTITY nonewline SYSTEM "entities28-1.inc">
+]>
+<doc>&nonewline;</doc>
