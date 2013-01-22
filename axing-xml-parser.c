@@ -1230,7 +1230,7 @@ context_parse_data (ParserContext *context, char *line)
                     context->cur_text = NULL;
                     context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
 
-                    g_signal_emit_by_name (context->parser, "stream-event");
+                    axing_stream_emit_event (AXING_STREAM (context->parser));
                     parser_clean_event_data (context->parser);
                 }
                 switch (c[1]) {
@@ -2221,7 +2221,7 @@ context_parse_cdata (ParserContext *context, char **line)
             context->cur_text = NULL;
             context->parser->priv->event_type = AXING_STREAM_EVENT_CDATA;
 
-            g_signal_emit_by_name (context->parser, "stream-event");
+            axing_stream_emit_event (AXING_STREAM (context->parser));
             parser_clean_event_data (context->parser);
             context->state = PARSER_STATE_TEXT;
             return;
@@ -2266,7 +2266,7 @@ context_parse_comment (ParserContext *context, char **line)
                 context->cur_text = NULL;
                 context->parser->priv->event_type = AXING_STREAM_EVENT_COMMENT;
 
-                g_signal_emit_by_name (context->parser, "stream-event");
+                axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
             }
             context->state = context->prev_state;
@@ -2319,7 +2319,7 @@ context_parse_instruction (ParserContext *context, char **line)
                 context->cur_text = NULL;
                 context->parser->priv->event_type = AXING_STREAM_EVENT_INSTRUCTION;
 
-                g_signal_emit_by_name (context->parser, "stream-event");
+                axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
             }
             context->state = context->prev_state;
@@ -2410,7 +2410,7 @@ context_parse_end_element (ParserContext *context, char **line)
     g_free (frame.qname);
 
     context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
-    g_signal_emit_by_name (context->parser, "stream-event");
+    axing_stream_emit_event (AXING_STREAM (context->parser));
 
     if (context->parser->priv->event_stack->len == context->event_stack_root)
         context->state = context->init_state;
@@ -2871,7 +2871,7 @@ context_parse_text (ParserContext *context, char **line)
                 context->cur_text = NULL;
                 context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
 
-                g_signal_emit_by_name (context->parser, "stream-event");
+                axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
             }
             return;
@@ -3007,7 +3007,7 @@ context_trigger_start_element (ParserContext *context)
     }
 
     context->parser->priv->event_type = AXING_STREAM_EVENT_START_ELEMENT;
-    g_signal_emit_by_name (context->parser, "stream-event");
+    axing_stream_emit_event (AXING_STREAM (context->parser));
 
     if (context->empty) {
         if (frame.nshash) {
@@ -3017,7 +3017,7 @@ context_trigger_start_element (ParserContext *context)
         g_array_remove_index (context->parser->priv->event_stack,
                               context->parser->priv->event_stack->len - 1);
         context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
-        g_signal_emit_by_name (context->parser, "stream-event");
+        axing_stream_emit_event (AXING_STREAM (context->parser));
     }
 
  error:

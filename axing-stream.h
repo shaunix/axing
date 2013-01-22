@@ -139,6 +139,7 @@ const char *           axing_stream_get_attribute_namespace (AxingStream   *stre
 const char *           axing_stream_get_attribute_value     (AxingStream   *stream,
                                                              const char    *name,
                                                              const char    *ns);
+void                   axing_stream_emit_event              (AxingStream   *stream);
 
 
 #ifdef FIXME_utility_functions

@@ -206,3 +206,9 @@ stream_event_default (AxingStream *stream)
 {
     /* FIXME */
 }
+
+void
+axing_stream_emit_event (AxingStream *stream)
+{
+    g_signal_emit (stream, signals[STREAM_EVENT], 0);
+}
