@@ -824,16 +824,24 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
     }
 }
 
-#define XML_IS_CHAR(c, context) ((context->parser->priv->xml_version == XML_1_1) ? (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0x7E) || c == 0x85 || (c  >= 0xA0 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)) : (c == 0x9 || c == 0xA || c == 0xD || (c >= 0x20 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0x10FFFF)))
+#define XML_IS_CHAR(cp, context) ((context->parser->priv->xml_version == XML_1_1) ? (cp == 0x09 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0x7E) || cp == 0x85 || (cp  >= 0xA0 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)) : (cp == 0x9 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)))
 
-#define XML_IS_CHAR_RESTRICTED(c, context) ((context->parser->priv->xml_version == XML_1_1) && ((c >= 0x1 && c <= 0x8) || (c >= 0xB && c <= 0xC) || (c >= 0xE && c <= 0x1F) || (c >= 0x7F && c <= 0x84) || (c >= 0x86 && c <= 0x9F)))
+#define XML_IS_CHAR_RESTRICTED(cp, context) ((context->parser->priv->xml_version == XML_1_1) && ((cp >= 0x1 && cp <= 0x8) || (cp >= 0xB && cp <= 0xC) || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84) || (cp >= 0x86 && cp <= 0x9F)))
 
-/* FIXME 1.1 newlines */
-#define XML_IS_SPACE(c) (c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A)
+#define IS_1_1(context) (context->state != PARSER_STATE_START && context->parser->priv->xml_version == XML_1_1)
 
-#define XML_IS_NAME_START_CHAR(c) (c == ':' || (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z') || (c >= 0xC0 && c <= 0xD6) || (c >= 0xD8 && c <= 0xF6) || (c >= 0xF8 && c <= 0x2FF) || (c >= 0x370 && c <= 0x37D) || (c >= 0x37F && c <= 0x1FFF) || (c >= 0x200C && c <= 0x200D) || (c >= 0x2070 && c <= 0x218F) || (c >= 0x2C00 && c <= 0x2FEF) || (c >= 0x3001 && c <= 0xD7FF) || (c >= 0xF900 && c <= 0xFDCF) || (c >= 0xFDF0 && c <= 0xFFFD) || (c >= 0x10000 && c <= 0xEFFFF))
+#define XML_IS_SPACE(line, context)                                     \
+    ((line)[0] == 0x20 || (line)[0] == 0x09 ||                          \
+     (line)[0] == 0x0D || (line)[0] == 0x0A ||                          \
+     (IS_1_1(context) &&                                                \
+      ( ((guchar)(line)[0] == 0xC2 && (guchar)(line)[1] == 0x85) ||     \
+        ((guchar)(line)[0] == 0xE2 && (guchar)(line)[1] == 0x80 &&      \
+         (guchar)(line)[2] == 0xA8)                                     \
+        )))
 
-#define XML_IS_NAME_CHAR(c) (XML_IS_NAME_START_CHAR(c) || c == '-' || c == '.' || (c >= '0' && c <= '9') || c == 0xB7 || (c >= 0x300 && c <= 0x36F) || (c >= 0x203F && c <= 0x2040))
+#define XML_IS_NAME_START_CHAR(cp) (cp == ':' || (cp >= 'A' && cp <= 'Z') || cp == '_' || (cp >= 'a' && cp <= 'z') || (cp >= 0xC0 && cp <= 0xD6) || (cp >= 0xD8 && cp <= 0xF6) || (cp >= 0xF8 && cp <= 0x2FF) || (cp >= 0x370 && cp <= 0x37D) || (cp >= 0x37F && cp <= 0x1FFF) || (cp >= 0x200C && cp <= 0x200D) || (cp >= 0x2070 && cp <= 0x218F) || (cp >= 0x2C00 && cp <= 0x2FEF) || (cp >= 0x3001 && cp <= 0xD7FF) || (cp >= 0xF900 && cp <= 0xFDCF) || (cp >= 0xFDF0 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0xEFFFF))
+
+#define XML_IS_NAME_CHAR(cp) (XML_IS_NAME_START_CHAR(cp) || cp == '-' || cp == '.' || (cp >= '0' && cp <= '9') || cp == 0xB7 || (cp >= 0x300 && cp <= 0x36F) || (cp >= 0x203F && cp <= 0x2040))
 
 #define XML_GET_NAME(line, namevar, context) { if (XML_IS_NAME_START_CHAR (g_utf8_get_char (*line))) { GString *name = g_string_new (NULL); char *next; gsize bytes; while (XML_IS_NAME_CHAR (g_utf8_get_char (*line))) { next = g_utf8_next_char (*line); bytes = next - *line; g_string_append_len (name, *line, bytes); *line = next; context->colnum += 1; } namevar = g_string_free (name, FALSE); } else { ERROR_SYNTAX(context); } }
 
@@ -863,28 +871,71 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 
 #define ERROR_FIXME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "%s:%i:%i:Unsupported feature.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
 
-/* FIXME: XML 1.1 newlines */
-#define EAT_SPACES(c, buf, bufsize, context) {gboolean aftercr = FALSE; while((bufsize < 0 || c - buf < bufsize) && XML_IS_SPACE(c[0])) {if (c[0] == 0x0D) { context->colnum = 1; context->linenum++; aftercr = TRUE; } else if (c[0] == 0x0A) { if (!aftercr) { context->colnum = 1; context->linenum++; } aftercr = FALSE; } else { context->colnum++; aftercr = FALSE; } (c)++; }}
+#define EAT_SPACES(line, buf, bufsize, context)                         \
+    while((bufsize < 0 || (line) - buf < bufsize)) {                    \
+        if ((line)[0] == 0x20 || (line)[0] == 0x09)                     \
+            { (line)++; context->colnum++; }                            \
+        else if ((line)[0] == 0x0A)                                     \
+            { (line)++; context->colnum = 1; context->linenum++; }      \
+        else if ((line)[0] == 0x0D) {                                   \
+            (line)++; context->colnum = 1; context->linenum++;          \
+            if ((line)[0] == 0x0A)                                      \
+                (line)++;                                               \
+            else if (IS_1_1(context) &&                                 \
+                     (guchar)(line)[0] == 0xC2 &&                       \
+                     (guchar)(line)[1] == 0x85)                         \
+                line = line + 2;                                        \
+        }                                                               \
+        else if (IS_1_1(context) &&                                     \
+                 (guchar)(line)[0] == 0xC2 &&                           \
+                 (guchar)(line)[1] == 0x85) {                           \
+            line = line + 2; context->colnum = 1; context->linenum++;   \
+        }                                                               \
+        else if (IS_1_1(context) &&                                     \
+                 (guchar)(line)[0] == 0xE2 &&                           \
+                 (guchar)(line)[1] == 0x80 &&                           \
+                 (guchar)(line)[2] == 0xA8) {                           \
+            line = line + 3; context->colnum = 1; context->linenum++;   \
+        }                                                               \
+        else                                                            \
+            break;                                                      \
+    }
 
-/* FIXME: XML 1.1 newlines */
-#define APPEND_CHAR(line, context)                              \
-    if ((*line)[0] == 0xA) {                                    \
-        g_string_append_c (context->cur_text, 0xA);             \
-        (*line)++; context->linenum++; context->colnum = 1;     \
-    }                                                           \
-    else if ((*line)[0] == 0xD) {                               \
-        g_string_append_c (context->cur_text, 0xA);             \
-        (*line)++; context->linenum++; context->colnum = 1;     \
-        if ((*line)[0] == 0xA)                                  \
-            (*line)++;                                          \
-    }                                                           \
-    else {                                                      \
-        char *next;                                             \
-        gsize bytes;                                            \
-        next = g_utf8_next_char (*line);                        \
-        bytes = next - *line;                                   \
-        g_string_append_len (context->cur_text, *line, bytes);  \
-        *line = next; context->colnum += 1;                     \
+#define APPEND_CHAR(line, context)                                      \
+    if ((*line)[0] == 0x0A) {                                           \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        (*line)++; context->linenum++; context->colnum = 1;             \
+    }                                                                   \
+    else if ((*line)[0] == 0x0D) {                                      \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        (*line)++; context->linenum++; context->colnum = 1;             \
+        if ((*line)[0] == 0x0A)                                         \
+            (*line)++;                                                  \
+        else if (IS_1_1(context) &&                                     \
+                 (guchar)(*line)[0] == 0xC2 &&                          \
+                 (guchar)(*line)[1] == 0x85)                            \
+            *line = *line + 2;                                          \
+    }                                                                   \
+    else if (IS_1_1(context) &&                                         \
+             (guchar)(*line)[0] == 0xC2 &&                              \
+             (guchar)(*line)[1] == 0x85) {                              \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        *line = *line + 2; context->colnum = 1; context->linenum++;     \
+    }                                                                   \
+    else if (IS_1_1(context) &&                                         \
+             (guchar)(*line)[0] == 0xE2 &&                              \
+             (guchar)(*line)[1] == 0x80 &&                              \
+             (guchar)(*line)[2] == 0xA8) {                              \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        *line = *line + 3; context->colnum = 1; context->linenum++;     \
+    }                                                                   \
+    else {                                                              \
+        char *next;                                                     \
+        gsize bytes;                                                    \
+        next = g_utf8_next_char (*line);                                \
+        bytes = next - *line;                                           \
+        g_string_append_len (context->cur_text, *line, bytes);          \
+        *line = next; context->colnum++;                                \
     }
 
 #define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
@@ -1037,7 +1088,7 @@ context_parse_xml_decl (ParserContext *context)
 
     g_return_if_fail (context->state == PARSER_STATE_START);
 
-    if (!(bufsize >= 6 && !strncmp(buf, "<?xml", 5) && XML_IS_SPACE(buf[5]) )) {
+    if (!(bufsize >= 6 && !strncmp(buf, "<?xml", 5) && XML_IS_SPACE(buf + 5, context) )) {
         return;
     }
     
@@ -1046,7 +1097,7 @@ context_parse_xml_decl (ParserContext *context)
     EAT_SPACES (c, buf, bufsize, context);
 
     CHECK_BUFFER (c, 8, buf, bufsize, context);
-    if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c[7])) )) {
+    if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
         ERROR_SYNTAX(context);
     }
     c += 7; context->colnum += 7;
@@ -1067,7 +1118,7 @@ context_parse_xml_decl (ParserContext *context)
     if (c[0] == 'e') {
         GString *enc;
         CHECK_BUFFER (c, 9, buf, bufsize, context);
-        if (!(!strncmp(c, "encoding", 8) && (c[8] == '=' || XML_IS_SPACE(c[8])) )) {
+        if (!(!strncmp(c, "encoding", 8) && (c[8] == '=' || XML_IS_SPACE(c + 8, context)) )) {
             ERROR_SYNTAX(context);
         }
         c += 8; context->colnum += 8;
@@ -1098,7 +1149,7 @@ context_parse_xml_decl (ParserContext *context)
     CHECK_BUFFER (c, 1, buf, bufsize, context);
     if (c[0] == 's') {
         CHECK_BUFFER (c, 11, buf, bufsize, context);
-        if (!(!strncmp(c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c[10])) )) {
+        if (!(!strncmp(c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
             ERROR_SYNTAX(context);
         }
         c += 10; context->colnum += 10;
@@ -1281,6 +1332,8 @@ context_parse_doctype (ParserContext  *context,
         if ((*line)[0] == '\0')
             return;
         XML_GET_NAME(line, doctype, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
         context->parser->priv->doctype = axing_dtd_schema_new ();
         axing_dtd_schema_set_doctype (context->parser->priv->doctype, doctype);
         g_free (doctype);
@@ -1339,11 +1392,11 @@ context_parse_doctype (ParserContext  *context,
                 g_free (public);
                 context->doctype_state = DOCTYPE_STATE_SYSTEM;
                 (*line)++; context->colnum++;
-                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                     ERROR_SYNTAX(context);
                 break;
             }
-            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+            if (!(c == 0x20 || c == 0x0D || c == 0x0A ||
                   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
                   c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
@@ -1505,7 +1558,7 @@ context_parse_doctype_element (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ELEMENT"));
         (*line) += 9; context->colnum += 9;
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_START;
         EAT_SPACES (*line, *line, -1, context);
@@ -1516,6 +1569,8 @@ context_parse_doctype_element (ParserContext *context, char **line) {
         if ((*line)[0] == '\0')
             return;
         XML_GET_NAME(line, context->cur_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_NAME;
     }
 
@@ -1548,7 +1603,7 @@ context_parse_doctype_element (ParserContext *context, char **line) {
         /* not checking the internal syntax here; valid chars only */
         while ((*line)[0] != '\0' && (*line)[0] != '>') {
             if (!(XML_IS_NAME_CHAR (g_utf8_get_char (*line)) ||
-                  XML_IS_SPACE ((*line)[0]) ||
+                  XML_IS_SPACE (*line, context) ||
                   (*line)[0] == '(' || (*line)[0] == ')' || (*line)[0] == '|' ||
                   (*line)[0] == ',' || (*line)[0] == '+' || (*line)[0] == '*' ||
                   (*line)[0] == '?' || (*line)[0] == '#' )) {
@@ -1588,7 +1643,7 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ATTLIST"));
         (*line) += 9; context->colnum += 9;
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_START;
         EAT_SPACES (*line, *line, -1, context);
@@ -1599,6 +1654,8 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
         if ((*line)[0] == '\0')
             return;
         XML_GET_NAME(line, context->cur_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_NAME;
     }
 
@@ -1625,7 +1682,7 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
                 break;
             }
             if (!(XML_IS_NAME_CHAR (g_utf8_get_char (*line)) ||
-                  XML_IS_SPACE ((*line)[0]) ||
+                  XML_IS_SPACE (*line, context) ||
                   (*line)[0] == '#' || (*line)[0] == '|' ||
                   (*line)[0] == '(' || (*line)[0] == ')' )) {
                 ERROR_SYNTAX(context);
@@ -1680,7 +1737,7 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!NOTATION"));
         (*line) += 10; context->colnum += 10;
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_NOTATION_START;
         EAT_SPACES (*line, *line, -1, context);
@@ -1691,6 +1748,8 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
         if ((*line)[0] == '\0')
             return;
         XML_GET_NAME(line, context->cur_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_NOTATION_NAME;
     }
 
@@ -1709,7 +1768,7 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
         else {
             ERROR_SYNTAX(context);
         }
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
         EAT_SPACES (*line, *line, -1, context);
     }
@@ -1768,11 +1827,11 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
                 context->cur_text = NULL;
                 context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER;
                 (*line)++; context->colnum++;
-                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0' || (*line)[0] == '>'))
+                if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '>'))
                     ERROR_SYNTAX(context);
                 break;
             }
-            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+            if (!(c == 0x20 || c == 0x0D || c == 0x0A ||
                   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
                   c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
@@ -1833,7 +1892,7 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ENTITY"));
         (*line) += 8; context->colnum += 8;
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ENTITY_START;
         context->decl_pedef = FALSE;
@@ -1850,13 +1909,15 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
                 ERROR_SYNTAX(context);
             context->decl_pedef = TRUE;
             (*line)++; context->colnum++;
-            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                 ERROR_SYNTAX(context);
             EAT_SPACES (*line, *line, -1, context);
             if ((*line)[0] == '\0')
                 return;
         }
         XML_GET_NAME(line, context->cur_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
+            ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ENTITY_NAME;
     }
 
@@ -1866,14 +1927,14 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
             return;
         if (g_str_has_prefix (*line, "SYSTEM")) {
             (*line) += 6; context->colnum += 6;
-            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                 ERROR_SYNTAX(context);
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
             EAT_SPACES (*line, *line, -1, context);
         }
         else if (g_str_has_prefix (*line, "PUBLIC")) {
             (*line) += 6; context->colnum += 6;
-            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                 ERROR_SYNTAX(context);
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_PUBLIC;
             EAT_SPACES (*line, *line, -1, context);
@@ -1927,11 +1988,11 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
                 context->cur_text = NULL;
                 context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
                 (*line)++; context->colnum++;
-                if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+                if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                     ERROR_SYNTAX(context);
                 break;
             }
-            if (!(c == 0x20 || c == 0xD || c == 0xA ||
+            if (!(c == 0x20 || c == 0x0D || c == 0x0A ||
                   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
                   c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
                   c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
@@ -1977,7 +2038,7 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
         if ((*line)[0] == '\0')
             return;
         XML_GET_NAME(line, context->decl_ndata, context);
-        if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0' || (*line)[0] == '>'))
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '>'))
             ERROR_SYNTAX(context);
         context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
     }
@@ -1993,7 +2054,7 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
                 context->decl_ndata != NULL  )  /* only one NDATA */
                 ERROR_SYNTAX(context);
             (*line) += 5; context->colnum += 5;
-            if (!(XML_IS_SPACE((*line)[0]) || (*line)[0] == '\0'))
+            if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
                 ERROR_SYNTAX(context);
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_NDATA;
             return;
@@ -2230,6 +2291,8 @@ context_parse_instruction (ParserContext *context, char **line)
         }
         (*line) += 2; context->colnum += 2;
         XML_GET_NAME(line, context->parser->priv->event_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '?'))
+            ERROR_SYNTAX(context);
 
         context->prev_state = context->state;
         context->state = PARSER_STATE_INSTRUCTION;
@@ -2283,6 +2346,8 @@ context_parse_end_element (ParserContext *context, char **line)
         context->node_colnum = context->colnum;
         (*line) += 2; context->colnum += 2;
         XML_GET_NAME(line, context->parser->priv->event_qname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '>'))
+            ERROR_SYNTAX(context);
     }
     EAT_SPACES (*line, *line, -1, context);
     if ((*line)[0] == '\0') {
@@ -2379,8 +2444,11 @@ context_parse_start_element (ParserContext *context, char **line)
         (*line) += 2; context->colnum += 2;
         context_trigger_start_element (context);
     }
-    else {
+    else if (XML_IS_SPACE(*line, context) || (*line)[0] == '\0') {
         context->state = PARSER_STATE_STELM_BASE;
+    }
+    else {
+        ERROR_SYNTAX(context);
     }
 
  error:
@@ -2410,6 +2478,8 @@ context_parse_attrs (ParserContext *context, char **line)
         context->attr_colnum = context->colnum;
 
         XML_GET_NAME(line, context->cur_attrname, context);
+        if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '='))
+            ERROR_SYNTAX(context);
         context->state = PARSER_STATE_STELM_ATTNAME;
     }
     if (context->state == PARSER_STATE_STELM_ATTNAME) {
@@ -2507,7 +2577,7 @@ context_parse_attrs (ParserContext *context, char **line)
                 context->state = PARSER_STATE_STELM_BASE;
                 (*line)++; context->colnum++;
                 if (!((*line)[0] == '>' || (*line)[0] == '/' ||
-                      (*line)[0] == '\0' || XML_IS_SPACE ((*line)[0]))) {
+                      (*line)[0] == '\0' || XML_IS_SPACE (*line, context))) {
                     ERROR_SYNTAX(context);
                 }
                 return;

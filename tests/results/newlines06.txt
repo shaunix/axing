@@ -1,0 +1,3 @@
+[ sep |sep ()
+  # %0A
+error: newlines06.xml:3:2:Syntax error.

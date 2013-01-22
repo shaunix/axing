@@ -1,8 +1,8 @@
 [ doc |doc ()
   # %0A
   [ a |a ()
-    @ b |b () ∴
-    # ∴
+    @ b |b () %E2%88%B4
+    # %E2%88%B4
   ] a |a ()
   # %0A
   [ wrong |wrong ()

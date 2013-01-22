@@ -1,0 +1,3 @@
+[ nel |nel ()
+  # %0A
+error: newlines04.xml:3:2:Syntax error.

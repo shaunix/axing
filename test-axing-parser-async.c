@@ -29,7 +29,7 @@ stream_event (AxingStream *stream,
     while ((*attrs) != NULL) {
       for (i = 0; i < indent; i++) g_print ("  ");
       encval = g_uri_escape_string (axing_stream_get_attribute_value (stream, *attrs, NULL),
-                                    NULL, TRUE);
+                                    NULL, FALSE);
       g_print ("@ %s %s|%s (%s) %s\n",
                *attrs,
                axing_stream_get_attribute_prefix (stream, *attrs),
@@ -52,28 +52,28 @@ stream_event (AxingStream *stream,
   case AXING_STREAM_EVENT_CONTENT:
     for (i = 0; i < indent; i++) g_print ("  ");
     encval = g_uri_escape_string (axing_stream_get_event_content (stream),
-                                  NULL, TRUE);
+                                  NULL, FALSE);
     g_print ("# %s\n", encval);
     g_free (encval);
     break;
   case AXING_STREAM_EVENT_CDATA:
     for (i = 0; i < indent; i++) g_print ("  ");
     encval = g_uri_escape_string (axing_stream_get_event_content (stream),
-                                  NULL, TRUE);
+                                  NULL, FALSE);
     g_print ("* %s\n", encval);
     g_free (encval);
     break;
   case AXING_STREAM_EVENT_COMMENT:
     for (i = 0; i < indent; i++) g_print ("  ");
     encval = g_uri_escape_string (axing_stream_get_event_content (stream),
-                                  NULL, TRUE);
+                                  NULL, FALSE);
     g_print ("! %s\n", encval);
     g_free (encval);
     break;
   case AXING_STREAM_EVENT_INSTRUCTION:
     for (i = 0; i < indent; i++) g_print ("  ");
     encval = g_uri_escape_string (axing_stream_get_event_content (stream),
-                                  NULL, TRUE);
+                                  NULL, FALSE);
     g_print ("? %s %s\n",
              axing_stream_get_event_qname (stream),
              encval);

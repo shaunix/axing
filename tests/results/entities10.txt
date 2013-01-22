@@ -1,4 +1,4 @@
 [ doc |doc ()
-  # ∴
+  # %E2%88%B4
 ] doc |doc ()
 finish
