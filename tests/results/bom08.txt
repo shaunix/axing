@@ -1,0 +1,1 @@
+error: bom08.xml:1:39:Detected encoding "UTF-16LE" from BOM, but got "UTF-8" from declaration.

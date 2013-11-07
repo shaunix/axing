@@ -92,6 +92,19 @@ typedef enum {
 
 typedef enum { XML_1_0, XML_1_1 } XmlVersion;
 
+typedef enum {
+    BOM_ENCODING_NONE,
+    BOM_ENCODING_UCS4_BE,
+    BOM_ENCODING_UCS4_LE,
+    BOM_ENCODING_UTF16_BE,
+    BOM_ENCODING_UTF16_LE,
+    BOM_ENCODING_4BYTE_BE,
+    BOM_ENCODING_4BYTE_LE,
+    BOM_ENCODING_2BYTE_BE,
+    BOM_ENCODING_2BYTE_LE,
+    BOM_ENCODING_UTF8
+} BomEncoding;
+
 typedef struct {
     char       *qname;
     GHashTable *nshash;
@@ -132,6 +145,8 @@ struct _ParserContext {
     ParserState    init_state;
     ParserState    prev_state;
     DoctypeState   doctype_state;
+    BomEncoding    bom_encoding;
+    gboolean       bom_checked;
     int            linenum;
     int            colnum;
     int            event_stack_root;
@@ -237,6 +252,9 @@ static void      context_read_data_cb           (GDataInputStream     *stream,
                                                  GAsyncResult         *res,
                                                  ParserContext        *context);
 static void      context_check_end              (ParserContext        *context);
+static void      context_set_encoding           (ParserContext        *context,
+                                                 const char           *encoding);
+static gboolean  context_parse_bom              (ParserContext        *context);
 static void      context_parse_xml_decl         (ParserContext        *context);
 static void      context_parse_data             (ParserContext        *context,
                                                  char                 *line);
@@ -737,12 +755,27 @@ context_parse_sync (ParserContext *context)
 
     context->datastream = g_data_input_stream_new (context->srcstream);
     if (context->state == PARSER_STATE_START) {
+        gboolean reencoded;
         g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
                                       1024,
                                       context->parser->priv->cancellable,
                                       &(context->parser->priv->error));
         if (context->parser->priv->error)
             goto error;
+
+        reencoded = context_parse_bom (context);
+        if (context->parser->priv->error)
+            goto error;
+
+        if (reencoded) {
+            g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
+                                          1024,
+                                          context->parser->priv->cancellable,
+                                          &(context->parser->priv->error));
+            if (context->parser->priv->error)
+                goto error;
+        }
+
         context_parse_xml_decl (context);
         if (context->parser->priv->error)
             goto error;
@@ -906,6 +939,8 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 
 #define ERROR_NS_INVALID(context, prefix) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, "%s:%i:%i:Invalid namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, context->attr_linenum, context->attr_colnum, prefix); goto error; }
 
+#define ERROR_BOM_ENCODING(context, bomenc, encoding) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET, "%s:%i:%i:Detected encoding \"%s\" from BOM, but got \"%s\" from declaration.", context->showname ? context->showname : context->basename, context->linenum, context->colnum, bomenc, encoding); goto error; }
+
 #define ERROR_FIXME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "%s:%i:%i:Unsupported feature.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
 
 #define EAT_SPACES(line, buf, bufsize, context)                         \
@@ -991,6 +1026,65 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
         *line = next; context->colnum++;                                \
     }
 
+#define ADVANCE_CUR(line, cur, context, check)                          \
+    if (check) {                                                        \
+        if ((guchar)cur[0] < 0x80) {                                    \
+            if (!(cur[0] == 0x09 || cur[0] == 0x0A ||                   \
+                  cur[0] == 0x0D || cur[0] >= 0x20 )) {                 \
+                *line = cur;                                            \
+                ERROR_SYNTAX(context);                                  \
+            }                                                           \
+        }                                                               \
+        else {                                                          \
+            gunichar cp = g_utf8_get_char(cur);                         \
+            if (!XML_IS_CHAR (cp, context)) {                           \
+                *line = cur;                                            \
+                ERROR_SYNTAX(context);                                  \
+            }                                                           \
+        }                                                               \
+    }                                                                   \
+    if (cur[0] == 0x0A) {                                               \
+        cur++; context->linenum++; context->colnum = 1;                 \
+    }                                                                   \
+    else if (cur[0] == 0x0D) {                                          \
+        if (cur != *line)                                               \
+            g_string_append_len(context->cur_text, *line, cur - *line); \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        cur++; context->linenum++; context->colnum = 1;                 \
+        if (cur[0] == 0x0A)                                             \
+            cur++;                                                      \
+        else if (IS_1_1(context) &&                                     \
+                 (guchar)cur[0] == 0xC2 &&                              \
+                 (guchar)cur[1] == 0x85)                                \
+            cur = cur + 2;                                              \
+        *line = cur;                                                    \
+    }                                                                   \
+    else if (IS_1_1(context) &&                                         \
+             (guchar)cur[0] == 0xC2 &&                                  \
+             (guchar)cur[1] == 0x85) {                                  \
+        if (cur != *line)                                               \
+            g_string_append_len(context->cur_text, *line, cur - *line); \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        cur = cur + 2; context->colnum = 1; context->linenum++;         \
+        *line = cur;                                                    \
+    }                                                                   \
+    else if (IS_1_1(context) &&                                         \
+             (guchar)cur[0] == 0xE2 &&                                  \
+             (guchar)cur[1] == 0x80 &&                                  \
+             (guchar)cur[2] == 0xA8) {                                  \
+        if (cur != *line)                                               \
+            g_string_append_len(context->cur_text, *line, cur - *line); \
+        g_string_append_c (context->cur_text, 0x0A);                    \
+        cur = cur + 3; context->colnum = 1; context->linenum++;         \
+        *line = cur;                                                    \
+    }                                                                   \
+    else if ((guchar)cur[0] < 0x80) {                                   \
+        cur++; context->colnum++;                                       \
+    }                                                                   \
+    else {                                                              \
+        cur = g_utf8_next_char(cur); context->colnum++;                 \
+    }
+
 #define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
 
 #define READ_TO_QUOTE(c, buf, bufsize, context, quot) EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '=') { ERROR_SYNTAX(context); } c += 1; context->colnum += 1; EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '"' && c[0] != '\'') { ERROR_SYNTAX(context); } quot = c[0]; c += 1; context->colnum += 1;
@@ -1030,6 +1124,25 @@ context_start_cb (GBufferedInputStream *stream,
 {
     g_buffered_input_stream_fill_finish (stream, res, NULL);
     if (context->state == PARSER_STATE_START) {
+        if (!context->bom_checked) {
+            gboolean reencoded;
+            context->bom_checked = TRUE;
+            reencoded = context_parse_bom (context);
+            if (context->parser->priv->error) {
+                context_complete (context);
+                return;
+            }
+            if (reencoded) {
+                g_buffered_input_stream_fill_async (G_BUFFERED_INPUT_STREAM (context->datastream),
+                                                    1024,
+                                                    G_PRIORITY_DEFAULT,
+                                                    context->parser->priv->cancellable,
+                                                    (GAsyncReadyCallback) context_start_cb,
+                                                    context);
+                return;
+            }
+        }
+
         context_parse_xml_decl (context);
         if (context->parser->priv->error) {
             context_complete (context);
@@ -1130,22 +1243,108 @@ context_check_end (ParserContext *context)
 }
 
 static void
+context_set_encoding (ParserContext *context, const char *encoding)
+{
+    GConverter *converter;
+    GInputStream *cstream;
+    converter = (GConverter *) g_charset_converter_new ("UTF-8", encoding, NULL);
+    if (converter == NULL) {
+        context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET,
+                                                    "Unsupported character encoding %s\n", encoding);
+        return;
+    }
+    cstream = g_converter_input_stream_new (G_INPUT_STREAM (context->datastream), converter);
+    g_object_unref (converter);
+    g_object_unref (context->datastream);
+    context->datastream = g_data_input_stream_new (cstream);
+    g_object_unref (cstream);
+}
+
+/* returns whether context->datastream changed, requiring the buffer to be refilled */
+static gboolean
+context_parse_bom (ParserContext *context)
+{
+    guchar *buf;
+    gsize bufsize;
+
+    g_return_if_fail (context->state == PARSER_STATE_START);
+
+    buf = (guchar *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
+
+    if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0xFE && buf[3] == 0xFF) {
+        context->bom_encoding = BOM_ENCODING_UCS4_BE;
+    }
+    else if (bufsize >= 4 && buf[0] == 0xFF && buf[1] == 0xFE && buf[2] == 0x00 && buf[3] == 0x00) {
+        context->bom_encoding = BOM_ENCODING_UCS4_LE;
+    }
+    else if (bufsize >= 2 && buf[0] == 0xFE && buf[1] == 0xFF) {
+        context->bom_encoding = BOM_ENCODING_UTF16_BE;
+    }
+    else if (bufsize >= 2 && buf[0] == 0xFF && buf[1] == 0xFE) {
+        context->bom_encoding = BOM_ENCODING_UTF16_LE;
+    }
+    else if (bufsize >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF) {
+        context->bom_encoding = BOM_ENCODING_UTF8;
+    }
+    else if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0x00 && buf[3] == 0x3C) {
+        context->bom_encoding = BOM_ENCODING_4BYTE_BE;
+    }
+    else if (bufsize >= 4 && buf[0] == 0x3C && buf[1] == 0x00 && buf[2] == 0x00 && buf[3] == 0x00) {
+        context->bom_encoding = BOM_ENCODING_4BYTE_LE;
+    }
+    else if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x3C && buf[2] == 0x00 && buf[3] == 0x3F) {
+        context->bom_encoding = BOM_ENCODING_2BYTE_BE;
+    }
+    else if (bufsize >= 4 && buf[0] == 0x3C && buf[1] == 0x00 && buf[2] == 0x3F && buf[3] == 0x00) {
+        context->bom_encoding = BOM_ENCODING_2BYTE_LE;
+    }
+
+    switch (context->bom_encoding) {
+    case BOM_ENCODING_UCS4_BE:
+    case BOM_ENCODING_4BYTE_BE:
+        context_set_encoding (context, "UCS-4BE");
+        return TRUE;
+    case BOM_ENCODING_UCS4_LE:
+    case BOM_ENCODING_4BYTE_LE:
+        context_set_encoding (context, "UCS-4LE");
+        return TRUE;
+    case BOM_ENCODING_UTF16_BE:
+    case BOM_ENCODING_2BYTE_BE:
+        context_set_encoding (context, "UTF-16BE");
+        return TRUE;
+    case BOM_ENCODING_UTF16_LE:
+    case BOM_ENCODING_2BYTE_LE:
+        context_set_encoding (context, "UTF-16LE");
+        return TRUE;
+    case BOM_ENCODING_UTF8:
+    case BOM_ENCODING_NONE:
+        return FALSE;
+    }
+}
+
+static void
 context_parse_xml_decl (ParserContext *context)
 {
     int i;
     gsize bufsize;
-    char *buf, *c;
+    guchar *buf, *c;
     char quot;
     char *encoding = NULL;
-    buf = (char *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
 
     g_return_if_fail (context->state == PARSER_STATE_START);
 
-    if (!(bufsize >= 6 && !strncmp(buf, "<?xml", 5) && XML_IS_SPACE(buf + 5, context) )) {
+    c = buf = (guchar *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
+
+    if (bufsize >= 3 && c[0] == 0xEF && c[1] == 0xBB && c[2] == 0xBF)
+        c = c + 3;
+
+    if (!(bufsize >= 6 + (c - buf) && !strncmp(c, "<?xml", 5) && XML_IS_SPACE(c + 5, context) )) {
+        if (c != buf)
+            g_input_stream_skip (G_INPUT_STREAM (context->datastream), c - buf, NULL, NULL);
         return;
     }
     
-    c = buf + 6;
+    c += 6;
     context->colnum += 6;
     EAT_SPACES (c, buf, bufsize, context);
 
@@ -1235,19 +1434,72 @@ context_parse_xml_decl (ParserContext *context)
     g_input_stream_skip (G_INPUT_STREAM (context->datastream), c - buf, NULL, NULL);
 
     if (encoding != NULL) {
-        GConverter *converter;
-        GInputStream *cstream;
-        converter = (GConverter *) g_charset_converter_new ("utf-8", encoding, NULL);
-        if (converter == NULL) {
-            context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET,
-                                                        "Unsupported character set %s\n", encoding);
-            goto error;
+        switch (context->bom_encoding) {
+        case BOM_ENCODING_UCS4_BE:
+            if (g_ascii_strcasecmp ("ucs-4be", encoding) &&
+                g_ascii_strcasecmp ("ucs4be", encoding) &&
+                g_ascii_strcasecmp ("ucs-4", encoding) &&
+                g_ascii_strcasecmp ("ucs4", encoding))
+                ERROR_BOM_ENCODING(context, "UCS-4BE", encoding);
+            break;
+        case BOM_ENCODING_UCS4_LE:
+            if (g_ascii_strcasecmp ("ucs-4le", encoding) &&
+                g_ascii_strcasecmp ("ucs4le", encoding) &&
+                g_ascii_strcasecmp ("ucs-4", encoding) &&
+                g_ascii_strcasecmp ("ucs4", encoding))
+                ERROR_BOM_ENCODING(context, "UCS-4LE", encoding);
+            break;
+        case BOM_ENCODING_4BYTE_BE:
+            if (g_ascii_strcasecmp ("ucs-4be", encoding) &&
+                g_ascii_strcasecmp ("ucs4be", encoding) &&
+                g_ascii_strcasecmp ("ucs-4", encoding) &&
+                g_ascii_strcasecmp ("ucs4", encoding))
+                ERROR_FIXME(context);
+            break;
+        case BOM_ENCODING_4BYTE_LE:
+            if (g_ascii_strcasecmp ("ucs-4le", encoding) &&
+                g_ascii_strcasecmp ("ucs4le", encoding) &&
+                g_ascii_strcasecmp ("ucs-4", encoding) &&
+                g_ascii_strcasecmp ("ucs4", encoding))
+                ERROR_FIXME(context);
+            break;
+        case BOM_ENCODING_UTF16_BE:
+            if (g_ascii_strcasecmp ("utf-16be", encoding) &&
+                g_ascii_strcasecmp ("utf16be", encoding) &&
+                g_ascii_strcasecmp ("utf-16", encoding) &&
+                g_ascii_strcasecmp ("utf16", encoding))
+                ERROR_BOM_ENCODING(context, "UTF-16BE", encoding);
+            break;
+        case BOM_ENCODING_UTF16_LE:
+            if (g_ascii_strcasecmp ("utf-16le", encoding) &&
+                g_ascii_strcasecmp ("utf16le", encoding) &&
+                g_ascii_strcasecmp ("utf-16", encoding) &&
+                g_ascii_strcasecmp ("utf16", encoding))
+                ERROR_BOM_ENCODING(context, "UTF-16LE", encoding);
+            break;
+        case BOM_ENCODING_2BYTE_BE:
+            if (g_ascii_strcasecmp ("utf-16be", encoding) &&
+                g_ascii_strcasecmp ("utf16be", encoding) &&
+                g_ascii_strcasecmp ("utf-16", encoding) &&
+                g_ascii_strcasecmp ("utf16", encoding))
+                ERROR_FIXME(context);
+            break;
+        case BOM_ENCODING_2BYTE_LE:
+            if (g_ascii_strcasecmp ("utf-16le", encoding) &&
+                g_ascii_strcasecmp ("utf16le", encoding) &&
+                g_ascii_strcasecmp ("utf-16", encoding) &&
+                g_ascii_strcasecmp ("utf16", encoding))
+                ERROR_FIXME(context);
+            break;
+        case BOM_ENCODING_UTF8:
+            if (g_ascii_strcasecmp ("utf-8", encoding) &&
+                g_ascii_strcasecmp ("utf8", encoding))
+                ERROR_BOM_ENCODING(context, "UTF-8", encoding);
+            break;
+        case BOM_ENCODING_NONE:
+            context_set_encoding (context, encoding);
+            break;
         }
-        cstream = g_converter_input_stream_new (G_INPUT_STREAM (context->datastream), converter);
-        g_object_unref (converter);
-        g_object_unref (context->datastream);
-        context->datastream = g_data_input_stream_new (cstream);
-        g_object_unref (cstream);
         g_free (encoding);
     }
 
@@ -2544,10 +2796,13 @@ context_parse_attrs (ParserContext *context, char **line)
         }
     }
     if (context->state == PARSER_STATE_STELM_ATTVAL) {
-        while ((*line)[0] != '\0') {
-            if ((*line)[0] == context->quotechar) {
+        char *cur = *line;
+        while (cur[0] != '\0') {
+            if (cur[0] == context->quotechar) {
                 char *xmlns = NULL;
                 char *attrval;
+                if (cur != *line)
+                    g_string_append_len (context->cur_text, *line, cur - *line);
                 attrval = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
 
@@ -2608,15 +2863,19 @@ context_parse_attrs (ParserContext *context, char **line)
                 }
 
                 context->state = PARSER_STATE_STELM_BASE;
-                (*line)++; context->colnum++;
-                if (!((*line)[0] == '>' || (*line)[0] == '/' ||
-                      (*line)[0] == '\0' || XML_IS_SPACE (*line, context))) {
+                cur++; context->colnum++;
+                *line = cur;
+                if (!(cur[0] == '>' || cur[0] == '/' ||
+                      cur[0] == '\0' || XML_IS_SPACE (cur, context))) {
                     ERROR_SYNTAX(context);
                 }
                 return;
             }
-            else if ((*line)[0] == '&') {
-                context_parse_entity (context, line);
+            else if (cur[0] == '&') {
+                if (cur != *line)
+                    g_string_append_len (context->cur_text, *line, cur - *line);
+                context_parse_entity (context, &cur);
+                *line = cur;
                 if (context->parser->priv->error)
                     goto error;
                 continue;
@@ -2624,8 +2883,11 @@ context_parse_attrs (ParserContext *context, char **line)
             else if ((*line)[0] == '<') {
                 ERROR_SYNTAX(context);
             }
-            APPEND_CHAR (line, context, TRUE);
+            ADVANCE_CUR (line, cur, context, TRUE);
         }
+        if (cur != *line)
+            g_string_append_len (context->cur_text, *line, cur - *line);
+        *line = cur;
     }
  error:
     return;
@@ -2889,14 +3151,17 @@ context_process_entity_finish (ParserContext *context)
     context_read_data_cb (NULL, NULL, parent);
 }
 
-
 static void
 context_parse_text (ParserContext *context, char **line)
 {
-    while ((*line)[0] != '\0') {
-        if ((*line)[0] == '<') {
+    char *cur = *line;
+    while (cur[0] != '\0') {
+        if (cur[0] == '<') {
             if (context->cur_text) {
                 g_free (context->parser->priv->event_content);
+                if (cur != *line)
+                    g_string_append_len (context->cur_text, *line, cur - *line);
+                *line = cur;
                 context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
                 context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
@@ -2904,10 +3169,15 @@ context_parse_text (ParserContext *context, char **line)
                 axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
             }
+            else
+                *line = cur;
             return;
         }
-        if ((*line)[0] == '&') {
-            context_parse_entity (context, line);
+        if (cur[0] == '&') {
+            if (cur != *line)
+                g_string_append_len (context->cur_text, *line, cur - *line);
+            context_parse_entity (context, &cur);
+            *line = cur;
             if (context->parser->priv->error)
                 goto error;
             continue;
@@ -2915,9 +3185,12 @@ context_parse_text (ParserContext *context, char **line)
         if (context->cur_text == NULL) {
             context->cur_text = g_string_new (NULL);
         }
-        APPEND_CHAR (line, context, TRUE);
+        ADVANCE_CUR (line, cur, context, TRUE);
     }
+    if (cur != *line)
+        g_string_append_len (context->cur_text, *line, cur - *line);
  error:
+    *line = cur;
     return;
 }
 
@@ -3103,6 +3376,8 @@ context_new (AxingXmlParser *parser)
     context = g_new0 (ParserContext, 1);
     context->state = PARSER_STATE_NONE;
     context->init_state = PARSER_STATE_PROLOG;
+    context->bom_encoding = BOM_ENCODING_NONE;
+    context->bom_checked = FALSE;
     context->linenum = 1;
     context->colnum = 1;
     context->parser = g_object_ref (parser);
