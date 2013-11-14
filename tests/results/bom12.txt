@@ -1,0 +1,7 @@
+[ doc |doc ()
+  # %0A%0A
+  [ foo |foo ()
+  ] foo |foo ()
+  # %0A%0A
+] doc |doc ()
+finish

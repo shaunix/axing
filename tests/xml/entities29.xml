@@ -1,0 +1,6 @@
+<!DOCTYPE doc [
+<!ENTITY foo SYSTEM "entities29-1.inc">
+]>
+<doc>
+&foo;
+</doc>

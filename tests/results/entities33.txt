@@ -1,0 +1,2 @@
+[ doc |doc ()
+error: entities33-1.inc:1:38:Syntax error.

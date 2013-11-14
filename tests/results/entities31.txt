@@ -1,0 +1,8 @@
+[ doc |doc ()
+  # %0A%0Asome%20
+  [ i |i ()
+    # mixed
+  ] i |i ()
+  # %20content%0A%0A
+] doc |doc ()
+finish

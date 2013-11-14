@@ -35,6 +35,7 @@ typedef enum {
     PARSER_STATE_START,
     PARSER_STATE_PROLOG,
     PARSER_STATE_EPILOG,
+    PARSER_STATE_TEXTDECL,
 
     PARSER_STATE_STELM_BASE,
     PARSER_STATE_STELM_ATTNAME,
@@ -754,7 +755,7 @@ context_parse_sync (ParserContext *context)
         goto error;
 
     context->datastream = g_data_input_stream_new (context->srcstream);
-    if (context->state == PARSER_STATE_START) {
+    if (context->state == PARSER_STATE_START || context->state == PARSER_STATE_TEXTDECL) {
         gboolean reencoded;
         g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
                                       1024,
@@ -779,6 +780,9 @@ context_parse_sync (ParserContext *context)
         context_parse_xml_decl (context);
         if (context->parser->priv->error)
             goto error;
+
+        if (context->state == PARSER_STATE_TEXTDECL)
+            context->state = context->init_state;
     }
 
     g_data_input_stream_set_newline_type (context->datastream,
@@ -1123,7 +1127,7 @@ context_start_cb (GBufferedInputStream *stream,
                   ParserContext        *context)
 {
     g_buffered_input_stream_fill_finish (stream, res, NULL);
-    if (context->state == PARSER_STATE_START) {
+    if (context->state == PARSER_STATE_START || context->state == PARSER_STATE_TEXTDECL) {
         if (!context->bom_checked) {
             gboolean reencoded;
             context->bom_checked = TRUE;
@@ -1148,6 +1152,9 @@ context_start_cb (GBufferedInputStream *stream,
             context_complete (context);
             return;
         }
+
+        if (context->state == PARSER_STATE_TEXTDECL)
+            context->state = context->init_state;
     }
     g_data_input_stream_set_newline_type (context->datastream,
                                           G_DATA_STREAM_NEWLINE_TYPE_ANY);
@@ -1267,7 +1274,7 @@ context_parse_bom (ParserContext *context)
     guchar *buf;
     gsize bufsize;
 
-    g_return_if_fail (context->state == PARSER_STATE_START);
+    g_return_if_fail (context->state == PARSER_STATE_START || context->state == PARSER_STATE_TEXTDECL);
 
     buf = (guchar *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
 
@@ -1331,7 +1338,7 @@ context_parse_xml_decl (ParserContext *context)
     char quot;
     char *encoding = NULL;
 
-    g_return_if_fail (context->state == PARSER_STATE_START);
+    g_return_if_fail (context->state == PARSER_STATE_START || context->state == PARSER_STATE_TEXTDECL);
 
     c = buf = (guchar *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
 
@@ -1349,21 +1356,26 @@ context_parse_xml_decl (ParserContext *context)
     EAT_SPACES (c, buf, bufsize, context);
 
     CHECK_BUFFER (c, 8, buf, bufsize, context);
-    if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
+    if (c[0] == 'v') {
+        if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
+            ERROR_SYNTAX(context);
+        }
+        c += 7; context->colnum += 7;
+
+        READ_TO_QUOTE (c, buf, bufsize, context, quot);
+
+        CHECK_BUFFER (c, 4, buf, bufsize, context);
+        if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
+            context->parser->priv->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
+        }
+        else {
+            ERROR_SYNTAX(context);
+        }
+        c += 4; context->colnum += 4;
+    }
+    else if (context->state != PARSER_STATE_TEXTDECL) {
         ERROR_SYNTAX(context);
     }
-    c += 7; context->colnum += 7;
-
-    READ_TO_QUOTE (c, buf, bufsize, context, quot);
-
-    CHECK_BUFFER (c, 4, buf, bufsize, context);
-    if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
-        context->parser->priv->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
-    }
-    else {
-        ERROR_SYNTAX(context);
-    }
-    c += 4; context->colnum += 4;
 
     EAT_SPACES (c, buf, bufsize, context);
     CHECK_BUFFER (c, 1, buf, bufsize, context);
@@ -1396,10 +1408,17 @@ context_parse_xml_decl (ParserContext *context)
 
         encoding = g_string_free (enc, FALSE);
     }
+    else if (context->state == PARSER_STATE_TEXTDECL) {
+        ERROR_SYNTAX(context);
+    }
 
     EAT_SPACES (c, buf, bufsize, context);
     CHECK_BUFFER (c, 1, buf, bufsize, context);
     if (c[0] == 's') {
+        if (context->state == PARSER_STATE_TEXTDECL) {
+            ERROR_SYNTAX(context);
+        }
+
         CHECK_BUFFER (c, 11, buf, bufsize, context);
         if (!(!strncmp(c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
             ERROR_SYNTAX(context);
@@ -1503,7 +1522,10 @@ context_parse_xml_decl (ParserContext *context)
         g_free (encoding);
     }
 
-    context->state = PARSER_STATE_PROLOG;
+    if (context->state == PARSER_STATE_TEXTDECL)
+        context->state = context->init_state;
+    else
+        context->state = PARSER_STATE_PROLOG;
 
  error:
     return;
@@ -1521,6 +1543,9 @@ context_parse_data (ParserContext *context, char *line)
     char *c = line;
     while (c[0] != '\0') {
         switch (context->state) {
+        case PARSER_STATE_TEXTDECL:
+            context->state = context->init_state;
+            /* no break */
         case PARSER_STATE_START:
         case PARSER_STATE_PROLOG:
         case PARSER_STATE_EPILOG:
@@ -3058,7 +3083,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 entctxt = context_new (context->parser);
                 entctxt->parent = context;
                 entctxt->entname = g_strdup (entname);
-                entctxt->state = context->state;
+                entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
                 entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
@@ -3090,7 +3115,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 entctxt->resource = resource;
                 entctxt->basename = resource_get_basename (resource);
                 entctxt->entname = g_strdup (entname);
-                entctxt->state = context->state;
+                entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
                 entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
