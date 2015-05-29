@@ -116,7 +116,6 @@ main (int argc, char **argv)
 {
   AxingXmlParser *parser;
 
-  g_type_init ();
   setlocale(LC_ALL, "");
 
   indent = 0;

@@ -29,7 +29,6 @@ main (int argc, char **argv)
 {
     int errcode;
 
-    g_type_init ();
     setlocale(LC_ALL, "");
 
     errcode = 1;
