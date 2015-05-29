@@ -24,11 +24,22 @@ SRCS = \
 
 OBJS = $(SRCS:.c=.o)
 
-all: $(TESTS)
+all: gitignore $(TESTS)
 
 clean:
 	rm -f $(TESTS)
 	rm -f *.o
+
+gitignore: Makefile
+	( echo "*~" ; \
+	  echo "*.o" ; \
+	  echo ".gitignore" ; \
+	) > .gitignore ; \
+	for p in $(TESTS); do \
+	  echo "/$$p" >> .gitignore ; \
+	done
+
+PHONY = gitignore
 
 %.o: %.c
 	$(CC) -c -o $(@F) $(CFLAGS) $<
