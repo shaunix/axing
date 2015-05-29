@@ -86,7 +86,6 @@ main (int argc, char **argv)
   int errcode;
   AxingXmlParser *parser;
 
-  g_type_init ();
   setlocale(LC_ALL, "");
 
   indent = 0;

@@ -374,35 +374,12 @@ axing_xml_parser_dispose (GObject *object)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (object);
 
-    if (parser->priv->resource) {
-        g_object_unref (parser->priv->resource);
-        parser->priv->resource = NULL;
-    }
-
-    if (parser->priv->resolver) {
-        g_object_unref (parser->priv->resolver);
-        parser->priv->resolver = NULL;
-    }
-
-    if (parser->priv->context) {
-        context_free (parser->priv->context);
-        parser->priv->context = NULL;
-    }
-
-    if (parser->priv->cancellable) {
-        g_object_unref (parser->priv->cancellable);
-        parser->priv->cancellable = NULL;
-    }
-
-    if (parser->priv->result) {
-        g_object_unref (parser->priv->result);
-        parser->priv->result = NULL;
-    }
-
-    if (parser->priv->doctype) {
-        g_object_unref (parser->priv->doctype);
-        parser->priv->doctype = NULL;
-    }
+    g_clear_object (&parser->priv->resource);
+    g_clear_object (&parser->priv->resolver);
+    g_clear_object (&parser->priv->context);
+    g_clear_object (&parser->priv->cancellable);
+    g_clear_object (&parser->priv->result);
+    g_clear_object (&parser->priv->doctype);
 
     G_OBJECT_CLASS (axing_xml_parser_parent_class)->dispose (object);
 }
@@ -510,27 +487,21 @@ namespace_map_get_namespace (AxingNamespaceMap *map,
 static void
 parser_clean_event_data (AxingXmlParser *parser)
 {
-    g_free (parser->priv->event_qname);
-    parser->priv->event_qname = NULL;
-    g_free (parser->priv->event_prefix);
-    parser->priv->event_prefix = NULL;
-    g_free (parser->priv->event_localname);
-    parser->priv->event_localname = NULL;
-    g_free (parser->priv->event_namespace);
-    parser->priv->event_namespace = NULL;
-    g_free (parser->priv->event_content);
-    parser->priv->event_content = NULL;
+    g_clear_pointer (&parser->priv->event_qname, g_free);
+    g_clear_pointer (&parser->priv->event_prefix, g_free);
+    g_clear_pointer (&parser->priv->event_localname, g_free);
+    g_clear_pointer (&parser->priv->event_namespace, g_free);
+    g_clear_pointer (&parser->priv->event_content, g_free);
 
     if (parser->priv->event_attrvals != NULL) {
         gint i;
         for (i = 0; parser->priv->event_attrvals[i] != NULL; i++)
             attribute_data_free (parser->priv->event_attrvals[i]);
-        g_free (parser->priv->event_attrvals);
-        parser->priv->event_attrvals = NULL;
+
+        g_clear_pointer (&parser->priv->event_attrvals, g_free);
     }
     /* strings owned by AttributeData structs */
-    g_free (parser->priv->event_attrkeys);
-    parser->priv->event_attrkeys = NULL;
+    g_clear_pointer (&parser->priv->event_attrkeys, g_free);
 
     parser->priv->event_type = AXING_STREAM_EVENT_NONE;
 }
@@ -3414,14 +3385,10 @@ context_new (AxingXmlParser *parser)
 static void
 context_free (ParserContext *context)
 {
-    if (context->parser)
-        g_object_unref (context->parser);
-    if (context->resource)
-        g_object_unref (context->resource);
-    if (context->srcstream)
-        g_object_unref (context->srcstream);
-    if (context->datastream)
-        g_object_unref (context->datastream);
+    g_clear_object (&context->parser);
+    g_clear_object (&context->resource);
+    g_clear_object (&context->srcstream);
+    g_clear_object (&context->datastream);
 
     g_free (context->basename);
     g_free (context->entname);
@@ -3430,10 +3397,9 @@ context_free (ParserContext *context)
     g_free (context->cur_qname);
     g_free (context->cur_attrname);
 
-    if (context->cur_nshash)
-        g_hash_table_destroy (context->cur_nshash);
-    if (context->cur_attrs)
-        g_hash_table_destroy (context->cur_attrs);
+    g_clear_pointer (&context->cur_nshash, g_hash_table_unref);
+    g_clear_pointer (&context->cur_attrs, g_hash_table_unref);
+
     if (context->cur_text)
         g_string_free (context->cur_text, TRUE);
 

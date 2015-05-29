@@ -13,7 +13,6 @@ main (int argc, char **argv)
   AxingXmlParser *parser;
   int i;
 
-  g_type_init();
   setlocale(LC_ALL, "");
 
   for (i = 0; i < 100; i++) {
