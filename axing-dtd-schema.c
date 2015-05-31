@@ -22,14 +22,14 @@
 
 #include "axing-dtd-schema.h"
 
-struct _AxingDtdSchemaPrivate {
+typedef struct {
     char *doctype;
     char *public;
     char *system;
     GHashTable *general_entities;
     GHashTable *parameter_entities;
     GHashTable *notations;
-};
+} AxingDtdSchemaPrivate;
 
 typedef struct {
     char *name;
