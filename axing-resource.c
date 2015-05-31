@@ -32,7 +32,6 @@ struct _AxingResourcePrivate {
 static void      axing_resource_init          (AxingResource       *resource);
 static void      axing_resource_class_init    (AxingResourceClass  *klass);
 static void      axing_resource_dispose       (GObject           *object);
-static void      axing_resource_finalize      (GObject           *object);
 static void      axing_resource_get_property  (GObject           *object,
                                                guint              prop_id,
                                                GValue            *value,
