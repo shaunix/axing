@@ -90,7 +90,7 @@ axing_uri_parse (const char *str)
     return uri;
 }
 
-char *
+static char *
 axing_uri_remove_dots (const char *path)
 {
     GString *ret = g_string_new_len (NULL, strlen(path));
@@ -136,7 +136,7 @@ axing_uri_remove_dots (const char *path)
     return g_string_free (ret, FALSE);
 }
 
-char *
+static char *
 axing_uri_to_string (AxingUri *uri)
 {
     return g_strconcat (uri->scheme ? uri->scheme : "",
