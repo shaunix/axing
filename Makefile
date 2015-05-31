@@ -1,5 +1,12 @@
 CC ?= gcc
 PKGCONFIG = $(shell which pkg-config)
+DEBUG_CFLAGS = \
+	-Wall \
+	-Wstrict-prototypes \
+	-Werror=missing-prototypes \
+	-Werror=implicit-function-declaration \
+	-Werror=init-self \
+	-Werror=format-security -Werror=format=2
 CFLAGS = $(shell $(PKGCONFIG) --cflags gio-2.0)
 LIBS = $(shell $(PKGCONFIG) --libs gio-2.0)
 LIBXML2_CFLAGS = $(shell $(PKGCONFIG) --cflags libxml-2.0)
@@ -42,7 +49,7 @@ gitignore: Makefile
 PHONY = gitignore
 
 %.o: %.c
-	$(CC) -c -o $(@F) $(CFLAGS) $<
+	$(CC) -c -o $(@F) $(DEBUG_CFLAGS) $(CFLAGS) $<
 
 test-axing-parser-async: Makefile $(OBJS) test-axing-parser-async.o
 	$(CC) -o $(@F) $(LIBS) $(OBJS) $(addsuffix .o,$(@F))
