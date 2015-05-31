@@ -46,9 +46,6 @@ typedef struct _AxingDtdSchemaClass   AxingDtdSchemaClass;
 
 struct _AxingDtdSchema {
     GObject parent;
-
-    /*< private >*/
-    AxingDtdSchemaPrivate *priv;
 };
 
 struct _AxingDtdSchemaClass {
