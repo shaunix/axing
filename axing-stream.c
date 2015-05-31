@@ -22,23 +22,6 @@
 
 #include "axing-stream.h"
 
-struct _AxingStreamPrivate {
-    gpointer reserved;
-};
-
-static void      axing_stream_init          (AxingStream       *stream);
-static void      axing_stream_class_init    (AxingStreamClass  *klass);
-static void      axing_stream_dispose       (GObject           *object);
-static void      axing_stream_finalize      (GObject           *object);
-static void      axing_stream_get_property  (GObject           *object,
-                                             guint              prop_id,
-                                             GValue            *value,
-                                             GParamSpec        *pspec);
-static void      axing_stream_set_property  (GObject           *object,
-                                             guint              prop_id,
-                                             const GValue      *value,
-                                             GParamSpec        *pspec);
-
 static void      stream_event_default       (AxingStream       *stream);
 
 
@@ -48,28 +31,17 @@ enum {
 };
 static gint signals[LAST_SIGNAL] = { 0 };
 
-G_DEFINE_TYPE (AxingStream, axing_stream, G_TYPE_OBJECT);
+G_DEFINE_ABSTRACT_TYPE (AxingStream, axing_stream, G_TYPE_OBJECT)
 
 static void
 axing_stream_init (AxingStream *stream)
 {
-    stream->priv = G_TYPE_INSTANCE_GET_PRIVATE (stream, AXING_TYPE_STREAM,
-                                                AxingStreamPrivate);
 }
 
 static void
 axing_stream_class_init (AxingStreamClass *klass)
 {
-    GObjectClass *object_class = G_OBJECT_CLASS (klass);
-
-    g_type_class_add_private (klass, sizeof (AxingStreamPrivate));
-
     klass->stream_event = stream_event_default;
-
-    object_class->get_property = axing_stream_get_property;
-    object_class->set_property = axing_stream_set_property;
-    object_class->dispose = axing_stream_dispose;
-    object_class->finalize = axing_stream_finalize;
 
     signals[STREAM_EVENT] = g_signal_new ("stream-event",
                                           G_TYPE_FROM_CLASS (klass),
@@ -78,34 +50,6 @@ axing_stream_class_init (AxingStreamClass *klass)
                                           NULL, NULL,
                                           g_cclosure_marshal_VOID__VOID,
                                           G_TYPE_NONE, 0);
-}
-
-static void
-axing_stream_dispose (GObject *object)
-{
-    G_OBJECT_CLASS (axing_stream_parent_class)->dispose (object);
-}
-
-static void
-axing_stream_finalize (GObject *object)
-{
-    G_OBJECT_CLASS (axing_stream_parent_class)->finalize (object);
-}
-
-static void
-axing_stream_get_property (GObject    *object,
-                           guint       prop_id,
-                           GValue     *value,
-                           GParamSpec *pspec)
-{
-}
-
-static void
-axing_stream_set_property (GObject      *object,
-                           guint         prop_id,
-                           const GValue *value,
-                           GParamSpec   *pspec)
-{
 }
 
 AxingStreamEventType
