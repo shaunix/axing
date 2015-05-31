@@ -29,22 +29,8 @@
 G_BEGIN_DECLS
 
 #define AXING_TYPE_RESOURCE            (axing_resource_get_type ())
-#define AXING_RESOURCE(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), AXING_TYPE_RESOURCE, AxingResource))
-#define AXING_RESOURCE_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), AXING_TYPE_RESOURCE, AxingResourceClass))
-#define AXING_IS_RESOURCE(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AXING_TYPE_RESOURCE))
-#define AXING_IS_RESOURCE_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), AXING_TYPE_RESOURCE))
-#define AXING_RESOURCE_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), AXING_TYPE_RESOURCE, AxingResourceClass))
 
-typedef struct _AxingResource        AxingResource;
-typedef struct _AxingResourcePrivate AxingResourcePrivate;
-typedef struct _AxingResourceClass   AxingResourceClass;
-
-struct _AxingResource {
-    GObject parent;
-
-    /*< private >*/
-    AxingResourcePrivate *priv;
-};
+G_DECLARE_DERIVABLE_TYPE (AxingResource, axing_resource, AXING, RESOURCE, GObject)
 
 struct _AxingResourceClass {
     GObjectClass parent_class;
@@ -57,8 +43,6 @@ struct _AxingResourceClass {
     void (*_axing_reserved5) (void);
 };
 
-
-GType                axing_resource_get_type           (void);
 
 AxingResource *      axing_resource_new                (GFile               *file,
                                                         GInputStream        *stream);
