@@ -27,6 +27,8 @@
 #include "axing-stream.h"
 #include "axing-xml-parser.h"
 
+#include <string.h>
+
 #define NS_XML "http://www.w3.org/XML/1998/namespace"
 
 typedef enum {
@@ -677,8 +679,6 @@ static void
 axing_xml_parser_parse_init (AxingXmlParser *parser,
                              GCancellable   *cancellable)
 {
-    GFile *file;
-
     parser->priv->context = context_new (parser);
     parser->priv->context->state = PARSER_STATE_START;
 
@@ -792,10 +792,6 @@ axing_xml_parser_parse_async (AxingXmlParser      *parser,
                               GAsyncReadyCallback  callback,
                               gpointer             user_data)
 {
-    ParserContext *context;
-    GFile *file;
-    GInputStream *stream;
-
     g_return_if_fail (parser->priv->context == NULL);
 
     axing_xml_parser_parse_init (parser, cancellable);
@@ -1298,12 +1294,13 @@ context_parse_bom (ParserContext *context)
     case BOM_ENCODING_NONE:
         return FALSE;
     }
+
+    g_assert_not_reached ();
 }
 
 static void
 context_parse_xml_decl (ParserContext *context)
 {
-    int i;
     gsize bufsize;
     guchar *buf, *c;
     char quot;
@@ -1316,7 +1313,7 @@ context_parse_xml_decl (ParserContext *context)
     if (bufsize >= 3 && c[0] == 0xEF && c[1] == 0xBB && c[2] == 0xBF)
         c = c + 3;
 
-    if (!(bufsize >= 6 + (c - buf) && !strncmp(c, "<?xml", 5) && XML_IS_SPACE(c + 5, context) )) {
+    if (!(bufsize >= 6 + (c - buf) && !strncmp((const char *)c, "<?xml", 5) && XML_IS_SPACE(c + 5, context) )) {
         if (c != buf)
             g_input_stream_skip (G_INPUT_STREAM (context->datastream), c - buf, NULL, NULL);
         return;
@@ -1328,7 +1325,7 @@ context_parse_xml_decl (ParserContext *context)
 
     CHECK_BUFFER (c, 8, buf, bufsize, context);
     if (c[0] == 'v') {
-        if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
+        if (!(!strncmp((const char *)c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
             ERROR_SYNTAX(context);
         }
         c += 7; context->colnum += 7;
@@ -1353,7 +1350,7 @@ context_parse_xml_decl (ParserContext *context)
     if (c[0] == 'e') {
         GString *enc;
         CHECK_BUFFER (c, 9, buf, bufsize, context);
-        if (!(!strncmp(c, "encoding", 8) && (c[8] == '=' || XML_IS_SPACE(c + 8, context)) )) {
+        if (!(!strncmp((const char *)c, "encoding", 8) && (c[8] == '=' || XML_IS_SPACE(c + 8, context)) )) {
             ERROR_SYNTAX(context);
         }
         c += 8; context->colnum += 8;
@@ -1391,7 +1388,7 @@ context_parse_xml_decl (ParserContext *context)
         }
 
         CHECK_BUFFER (c, 11, buf, bufsize, context);
-        if (!(!strncmp(c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
+        if (!(!strncmp((const char *)c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
             ERROR_SYNTAX(context);
         }
         c += 10; context->colnum += 10;
@@ -3071,7 +3068,6 @@ context_process_entity (ParserContext *context, const char *entname, char **line
             else {
                 ParserContext *entctxt;
                 AxingResource *resource;
-                GFile *file;
                 resource = axing_resolver_resolve (resolver, context->resource,
                                                    NULL, system, public, "xml:entity",
                                                    context->parser->priv->cancellable,
