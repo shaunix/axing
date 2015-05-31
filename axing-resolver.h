@@ -29,24 +29,11 @@
 G_BEGIN_DECLS
 
 #define AXING_TYPE_RESOLVER            (axing_resolver_get_type ())
-#define AXING_RESOLVER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), AXING_TYPE_RESOLVER, AxingResolver))
-#define AXING_RESOLVER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), AXING_TYPE_RESOLVER, AxingResolverClass))
-#define AXING_IS_RESOLVER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AXING_TYPE_RESOLVER))
-#define AXING_IS_RESOLVER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), AXING_TYPE_RESOLVER))
-#define AXING_RESOLVER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), AXING_TYPE_RESOLVER, AxingResolverClass))
 
-typedef struct _AxingResolver         AxingResolver;
-typedef struct _AxingResolverPrivate  AxingResolverPrivate;
-typedef struct _AxingResolverClass    AxingResolverClass;
-
-struct _AxingResolver {
-    GObject parent;
-
-    /*< private >*/
-    AxingResolverPrivate *priv;
-};
+G_DECLARE_DERIVABLE_TYPE (AxingResolver, axing_resolver, AXING, RESOLVER, GObject)
 
 struct _AxingResolverClass {
+    /*< private >*/
     GObjectClass parent_class;
 
     /*< public >*/
@@ -78,8 +65,6 @@ struct _AxingResolverClass {
     void (*_axing_reserved4) (void);
     void (*_axing_reserved5) (void);
 };
-
-GType            axing_resolver_get_type         (void);
 
 AxingResolver *  axing_resolver_get_default      (void);
 
