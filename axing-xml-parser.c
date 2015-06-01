@@ -144,6 +144,7 @@ struct _ParserContext {
     char              *entname;
     char              *showname;
 
+    XmlVersion     xml_version;
     ParserState    state;
     ParserState    init_state;
     ParserState    prev_state;
@@ -175,7 +176,7 @@ struct _ParserContext {
     ParserContext *parent;
 };
 
-struct _AxingXmlParserPrivate {
+typedef struct {
     gboolean    async;
 
     AxingResource      *resource;
@@ -204,10 +205,8 @@ struct _AxingXmlParserPrivate {
     AttributeData      **event_attrvals;
 
     AxingDtdSchema      *doctype;
-};
+} AxingXmlParserPrivate;
 
-static void      axing_xml_parser_init          (AxingXmlParser       *parser);
-static void      axing_xml_parser_class_init    (AxingXmlParserClass  *klass);
 static void      axing_xml_parser_dispose       (GObject              *object);
 static void      axing_xml_parser_finalize      (GObject              *object);
 static void      axing_xml_parser_get_property  (GObject              *object,
@@ -314,16 +313,16 @@ enum {
 };
 
 G_DEFINE_TYPE_WITH_CODE (AxingXmlParser, axing_xml_parser, AXING_TYPE_STREAM,
+                         G_ADD_PRIVATE (AxingXmlParser)
                          G_IMPLEMENT_INTERFACE (AXING_TYPE_NAMESPACE_MAP,
                                                 namespace_map_interface_init));
 
 static void
 axing_xml_parser_init (AxingXmlParser *parser)
 {
-    parser->priv = G_TYPE_INSTANCE_GET_PRIVATE (parser, AXING_TYPE_XML_PARSER,
-                                                AxingXmlParserPrivate);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
 
-    parser->priv->event_stack = g_array_new (FALSE, FALSE, sizeof(ParserStackFrame));
+    priv->event_stack = g_array_new (FALSE, FALSE, sizeof(ParserStackFrame));
 }
 
 static void
@@ -331,8 +330,6 @@ axing_xml_parser_class_init (AxingXmlParserClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
     AxingStreamClass *stream_class = AXING_STREAM_CLASS (klass);
-
-    g_type_class_add_private (klass, sizeof (AxingXmlParserPrivate));
 
     stream_class->get_event_type = stream_get_event_type;
     stream_class->get_event_qname = stream_get_event_qname;
@@ -375,13 +372,14 @@ static void
 axing_xml_parser_dispose (GObject *object)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (object);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
 
-    g_clear_object (&parser->priv->resource);
-    g_clear_object (&parser->priv->resolver);
-    g_clear_object (&parser->priv->context);
-    g_clear_object (&parser->priv->cancellable);
-    g_clear_object (&parser->priv->result);
-    g_clear_object (&parser->priv->doctype);
+    g_clear_object (&priv->resource);
+    g_clear_object (&priv->resolver);
+    g_clear_object (&priv->context);
+    g_clear_object (&priv->cancellable);
+    g_clear_object (&priv->result);
+    g_clear_object (&priv->doctype);
 
     G_OBJECT_CLASS (axing_xml_parser_parent_class)->dispose (object);
 }
@@ -390,13 +388,11 @@ static void
 axing_xml_parser_finalize (GObject *object)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (object);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
 
-    g_clear_error (&(parser->priv->error));
-
+    g_clear_error (&priv->error);
     parser_clean_event_data (parser);
-
-    if (parser->priv->event_stack)
-        g_array_free (parser->priv->event_stack, TRUE);
+    g_array_free (priv->event_stack, TRUE);
 
     G_OBJECT_CLASS (axing_xml_parser_parent_class)->finalize (object);
 }
@@ -408,12 +404,13 @@ axing_xml_parser_get_property (GObject    *object,
                                GParamSpec *pspec)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (object);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
     switch (prop_id) {
     case PROP_RESOURCE:
-        g_value_set_object (value, parser->priv->resource);
+        g_value_set_object (value, priv->resource);
         break;
     case PROP_RESOLVER:
-        g_value_set_object (value, parser->priv->resolver);
+        g_value_set_object (value, priv->resolver);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -427,16 +424,13 @@ axing_xml_parser_set_property (GObject      *object,
                                GParamSpec   *pspec)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (object);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
     switch (prop_id) {
     case PROP_RESOURCE:
-        if (parser->priv->resource)
-            g_object_unref (parser->priv->resource);
-        parser->priv->resource = AXING_RESOURCE (g_value_dup_object (value));
+        priv->resource = AXING_RESOURCE (g_value_dup_object (value));
         break;
     case PROP_RESOLVER:
-        if (parser->priv->resolver)
-            g_object_unref (parser->priv->resolver);
-        parser->priv->resolver = AXING_RESOLVER (g_value_dup_object (value));
+        priv->resolver = AXING_RESOLVER (g_value_dup_object (value));
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -469,13 +463,14 @@ namespace_map_get_namespace (AxingNamespaceMap *map,
                              const char        *prefix)
 {
     AxingXmlParser *parser = AXING_XML_PARSER (map);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
     ParserStackFrame frame;
     int i;
     if (g_str_equal (prefix, "xml")) {
         return NS_XML;
     }
-    for (i = parser->priv->event_stack->len - 1; i >= 0; i--) {
-        frame = g_array_index (parser->priv->event_stack, ParserStackFrame, i);
+    for (i = priv->event_stack->len - 1; i >= 0; i--) {
+        frame = g_array_index (priv->event_stack, ParserStackFrame, i);
         if (frame.nshash != NULL) {
             const char *ns = g_hash_table_lookup (frame.nshash, prefix);
             if (ns != NULL) {
@@ -489,124 +484,122 @@ namespace_map_get_namespace (AxingNamespaceMap *map,
 static void
 parser_clean_event_data (AxingXmlParser *parser)
 {
-    g_clear_pointer (&parser->priv->event_qname, g_free);
-    g_clear_pointer (&parser->priv->event_prefix, g_free);
-    g_clear_pointer (&parser->priv->event_localname, g_free);
-    g_clear_pointer (&parser->priv->event_namespace, g_free);
-    g_clear_pointer (&parser->priv->event_content, g_free);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
 
-    if (parser->priv->event_attrvals != NULL) {
+    g_clear_pointer (&priv->event_qname, g_free);
+    g_clear_pointer (&priv->event_prefix, g_free);
+    g_clear_pointer (&priv->event_localname, g_free);
+    g_clear_pointer (&priv->event_namespace, g_free);
+    g_clear_pointer (&priv->event_content, g_free);
+
+    if (priv->event_attrvals != NULL) {
         gint i;
-        for (i = 0; parser->priv->event_attrvals[i] != NULL; i++)
-            attribute_data_free (parser->priv->event_attrvals[i]);
+        for (i = 0; priv->event_attrvals[i] != NULL; i++)
+            attribute_data_free (priv->event_attrvals[i]);
 
-        g_clear_pointer (&parser->priv->event_attrvals, g_free);
+        g_clear_pointer (&priv->event_attrvals, g_free);
     }
     /* strings owned by AttributeData structs */
-    g_clear_pointer (&parser->priv->event_attrkeys, g_free);
+    g_clear_pointer (&priv->event_attrkeys, g_free);
 
-    parser->priv->event_type = AXING_STREAM_EVENT_NONE;
+    priv->event_type = AXING_STREAM_EVENT_NONE;
 }
 
 static AxingStreamEventType
 stream_get_event_type (AxingStream *stream)
 {
-    return AXING_XML_PARSER (stream)->priv->event_type;
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+
+    return priv->event_type;
 }
 
 static const char *
 stream_get_event_qname (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
-    return parser->priv->event_qname;
+    return priv->event_qname;
 }
 
 static const char *
 stream_get_event_content (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_CONTENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_COMMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_CDATA   ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_CONTENT ||
+                          priv->event_type == AXING_STREAM_EVENT_COMMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_CDATA   ||
+                          priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
-    g_return_val_if_fail (parser->priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
-    return parser->priv->event_content;
+    g_return_val_if_fail (priv->event_type != AXING_STREAM_EVENT_NONE, NULL);
+    return priv->event_content;
 }
 
 static const char *
 stream_get_event_prefix (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
-    return parser->priv->event_prefix ? parser->priv->event_prefix : "";
+    return priv->event_prefix ? priv->event_prefix : "";
 }
 
 static const char *
 stream_get_event_localname (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
-    return parser->priv->event_localname ? parser->priv->event_localname : parser->priv->event_qname;
+    return priv->event_localname ? priv->event_localname : priv->event_qname;
 }
 
 static const char *
 stream_get_event_namespace (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
-                          parser->priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_END_ELEMENT ||
+                          priv->event_type == AXING_STREAM_EVENT_INSTRUCTION,
                           NULL);
-    return parser->priv->event_namespace ? parser->priv->event_namespace : "";
+    return priv->event_namespace ? priv->event_namespace : "";
 }
 
-static char *nokeys[1] = {NULL};
+static const char *nokeys[1] = {NULL};
 
 const char * const *
 stream_get_attributes (AxingStream *stream)
 {
-    AxingXmlParser *parser;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
-    if (parser->priv->event_attrkeys == NULL) {
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    if (priv->event_attrkeys == NULL) {
         return (const char * const *) nokeys;
     }
-    return (const char * const *) parser->priv->event_attrkeys;
+    return (const char * const *) priv->event_attrkeys;
 }
 
 const char *
 stream_get_attribute_localname (AxingStream *stream,
                                 const char  *qname)
 {
-    AxingXmlParser *parser;
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
     int i;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
-    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
-        AttributeData *data = parser->priv->event_attrvals[i];
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = priv->event_attrvals[i];
         if (g_str_equal (qname, data->qname)) {
             return data->localname ? data->localname : data->qname;
         }
@@ -618,13 +611,12 @@ const char *
 stream_get_attribute_prefix (AxingStream *stream,
                              const char  *qname)
 {
-    AxingXmlParser *parser;
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
     int i;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
-    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
-        AttributeData *data = parser->priv->event_attrvals[i];
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = priv->event_attrvals[i];
         if (g_str_equal (qname, data->qname)) {
             return data->prefix ? data->prefix : "";
         }
@@ -636,13 +628,12 @@ const char *
 stream_get_attribute_namespace (AxingStream *stream,
                                 const char  *qname)
 {
-    AxingXmlParser *parser;
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
     int i;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
-    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
-        AttributeData *data = parser->priv->event_attrvals[i];
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = priv->event_attrvals[i];
         if (g_str_equal (qname, data->qname)) {
             return data->namespace ? data->namespace : "";
         }
@@ -655,13 +646,12 @@ stream_get_attribute_value (AxingStream *stream,
                             const char  *name,
                             const char  *ns)
 {
-    AxingXmlParser *parser;
+    AxingXmlParserPrivate *priv =
+      axing_xml_parser_get_instance_private (AXING_XML_PARSER (stream));
     int i;
-    g_return_val_if_fail (AXING_IS_XML_PARSER (stream), NULL);
-    parser = (AxingXmlParser *) stream;
-    g_return_val_if_fail (parser->priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
-    for (i = 0; parser->priv->event_attrvals[i] != NULL; i++) {
-        AttributeData *data = parser->priv->event_attrvals[i];
+    g_return_val_if_fail (priv->event_type == AXING_STREAM_EVENT_START_ELEMENT, NULL);
+    for (i = 0; priv->event_attrvals[i] != NULL; i++) {
+        AttributeData *data = priv->event_attrvals[i];
         if (ns == NULL) {
             if (g_str_equal (name, data->qname))
                 return data->value;
@@ -679,15 +669,18 @@ static void
 axing_xml_parser_parse_init (AxingXmlParser *parser,
                              GCancellable   *cancellable)
 {
-    parser->priv->context = context_new (parser);
-    parser->priv->context->state = PARSER_STATE_START;
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
 
-    parser->priv->context->resource = g_object_ref (parser->priv->resource);
+    priv->context = context_new (parser);
+    priv->context->state = PARSER_STATE_START;
+
+    priv->context->resource = g_object_ref (priv->resource);
 
     if (cancellable)
-        parser->priv->cancellable = g_object_ref (cancellable);
+        priv->cancellable = g_object_ref (cancellable);
 
-    parser->priv->context->basename = resource_get_basename (parser->priv->resource);
+    priv->context->basename = resource_get_basename (priv->resource);
+    priv->context->xml_version = priv->xml_version;
 }
 
 void
@@ -695,34 +688,37 @@ axing_xml_parser_parse (AxingXmlParser  *parser,
                         GCancellable    *cancellable,
                         GError         **error)
 {
-    g_return_if_fail (parser->priv->context == NULL);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
+
+    g_return_if_fail (priv->context == NULL);
 
     axing_xml_parser_parse_init (parser, cancellable);
 
-    parser->priv->async = FALSE;
+    priv->async = FALSE;
 
-    context_parse_sync (parser->priv->context);
+    context_parse_sync (priv->context);
 
-    context_free (parser->priv->context);
-    parser->priv->context = NULL;
-    if (parser->priv->error) {
+    context_free (priv->context);
+    priv->context = NULL;
+    if (priv->error) {
         if (error != NULL)
-            *error = parser->priv->error;
+            *error = priv->error;
         else
-            g_error_free (parser->priv->error);
-        parser->priv->error = NULL;
+            g_error_free (priv->error);
+        priv->error = NULL;
     }
 }
 
 static void
 context_parse_sync (ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     char *line;
 
     context->srcstream = axing_resource_read (context->resource,
-                                              context->parser->priv->cancellable,
-                                              &(context->parser->priv->error));
-    if (context->parser->priv->error)
+                                              priv->cancellable,
+                                              &priv->error);
+    if (priv->error)
         goto error;
 
     context->datastream = g_data_input_stream_new (context->srcstream);
@@ -730,26 +726,26 @@ context_parse_sync (ParserContext *context)
         gboolean reencoded;
         g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
                                       1024,
-                                      context->parser->priv->cancellable,
-                                      &(context->parser->priv->error));
-        if (context->parser->priv->error)
+                                      priv->cancellable,
+                                      &priv->error);
+        if (priv->error)
             goto error;
 
         reencoded = context_parse_bom (context);
-        if (context->parser->priv->error)
+        if (priv->error)
             goto error;
 
         if (reencoded) {
             g_buffered_input_stream_fill (G_BUFFERED_INPUT_STREAM (context->datastream),
                                           1024,
-                                          context->parser->priv->cancellable,
-                                          &(context->parser->priv->error));
-            if (context->parser->priv->error)
+                                          priv->cancellable,
+                                          &priv->error);
+            if (priv->error)
                 goto error;
         }
 
         context_parse_xml_decl (context);
-        if (context->parser->priv->error)
+        if (priv->error)
             goto error;
 
         if (context->state == PARSER_STATE_TEXTDECL)
@@ -759,27 +755,27 @@ context_parse_sync (ParserContext *context)
     g_data_input_stream_set_newline_type (context->datastream,
                                           G_DATA_STREAM_NEWLINE_TYPE_ANY);
     while ((line = g_data_input_stream_read_upto (context->datastream, " ", -1, NULL,
-                                                  context->parser->priv->cancellable,
-                                                  &(context->parser->priv->error)) )) {
-        if (context->parser->priv->error)
+                                                  priv->cancellable,
+                                                  &priv->error) )) {
+        if (priv->error)
             goto error;
         context_parse_data (context, line);
         g_free (line);
-        if (context->parser->priv->error)
+        if (priv->error)
             goto error;
         if (g_buffered_input_stream_get_available (G_BUFFERED_INPUT_STREAM (context->datastream)) > 0) {
             char eol[2] = {0, 0};
             eol[0] = g_data_input_stream_read_byte (context->datastream,
-                                                    context->parser->priv->cancellable,
-                                                    &(context->parser->priv->error));
-            if (context->parser->priv->error)
+                                                    priv->cancellable,
+                                                    &priv->error);
+            if (priv->error)
                 goto error;
             context_parse_data (context, eol);
-            if (context->parser->priv->error)
+            if (priv->error)
                 goto error;
         }
     }
-    if (line == NULL && context->parser->priv->error == NULL)
+    if (line == NULL && priv->error == NULL)
         context_check_end (context);
 
  error:
@@ -792,19 +788,21 @@ axing_xml_parser_parse_async (AxingXmlParser      *parser,
                               GAsyncReadyCallback  callback,
                               gpointer             user_data)
 {
-    g_return_if_fail (parser->priv->context == NULL);
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
+
+    g_return_if_fail (priv->context == NULL);
 
     axing_xml_parser_parse_init (parser, cancellable);
 
-    parser->priv->async = TRUE;
-    parser->priv->result = g_simple_async_result_new (G_OBJECT (parser),
-                                                      callback, user_data,
-                                                      axing_xml_parser_parse_async);
+    priv->async = TRUE;
+    priv->result = g_simple_async_result_new (G_OBJECT (parser),
+                                              callback, user_data,
+                                              axing_xml_parser_parse_async);
 
-    axing_resource_read_async (parser->priv->resource,
-                               parser->priv->cancellable,
+    axing_resource_read_async (priv->resource,
+                               priv->cancellable,
                                (GAsyncReadyCallback) context_resource_read_cb,
-                               parser->priv->context);
+                               priv->context);
 }
 
 void
@@ -812,27 +810,26 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
                                GAsyncResult   *res,
                                GError        **error)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (parser);
+
     g_warn_if_fail (g_simple_async_result_get_source_tag (G_SIMPLE_ASYNC_RESULT (res)) == axing_xml_parser_parse_async);
 
-    if (parser->priv->context) {
-        context_free (parser->priv->context);
-        parser->priv->context = NULL;
-    }
+    g_clear_pointer (&priv->context, context_free);
 
-    if (parser->priv->error) {
+    if (priv->error) {
         if (error != NULL)
-            *error = parser->priv->error;
+            *error = priv->error;
         else
-            g_error_free (parser->priv->error);
-        parser->priv->error = NULL;
+            g_error_free (priv->error);
+        priv->error = NULL;
     }
 }
 
-#define XML_IS_CHAR(cp, context) ((context->parser->priv->xml_version == XML_1_1) ? (cp == 0x09 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0x7E) || cp == 0x85 || (cp  >= 0xA0 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)) : (cp == 0x9 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)))
+#define XML_IS_CHAR(cp, context) ((context->xml_version == XML_1_1) ? (cp == 0x09 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0x7E) || cp == 0x85 || (cp  >= 0xA0 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)) : (cp == 0x9 || cp == 0x0A || cp == 0x0D || (cp >= 0x20 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)))
 
-#define XML_IS_CHAR_RESTRICTED(cp, context) ((context->parser->priv->xml_version == XML_1_1) && ((cp >= 0x1 && cp <= 0x8) || (cp >= 0xB && cp <= 0xC) || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84) || (cp >= 0x86 && cp <= 0x9F)))
+#define XML_IS_CHAR_RESTRICTED(cp, context) ((context->xml_version == XML_1_1) && ((cp >= 0x1 && cp <= 0x8) || (cp >= 0xB && cp <= 0xC) || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84) || (cp >= 0x86 && cp <= 0x9F)))
 
-#define IS_1_1(context) (context->state != PARSER_STATE_START && context->parser->priv->xml_version == XML_1_1)
+#define IS_1_1(context) (context->state != PARSER_STATE_START && context->xml_version == XML_1_1)
 
 #define XML_IS_SPACE(line, context)                                     \
     ((line)[0] == 0x20 || (line)[0] == 0x09 ||                          \
@@ -886,33 +883,156 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
         namevar = g_string_free (name, FALSE);                          \
     }
 
-#define ERROR_SYNTAX(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_SYNTAX, "%s:%i:%i:Syntax error.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+#define ERROR_SYNTAX(context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_SYNTAX, \
+                              "%s:%i:%i:Syntax error.", \
+                              context->showname ? context->showname : context->basename, \
+                              context->linenum, \
+                              context->colnum); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_DUPATTR(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_DUPATTR, "%s:%i:%i:Duplicate attribute \"%s\".", context->showname ? context->showname : context->basename, context->attr_linenum, context->attr_colnum, context->cur_attrname); goto error; }
+#define ERROR_DUPATTR(context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_DUPATTR, \
+                              "%s:%i:%i:Duplicate attribute \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              context->attr_linenum, \
+                              context->attr_colnum, \
+                              context->cur_attrname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_MISSINGEND(context, qname) { context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_MISSINGEND, "%s:%i:%i:Missing end tag for \"%s\".", context->showname ? context->showname : context->basename, context->linenum, context->colnum, qname); goto error; }
+#define ERROR_MISSINGEND(context, qname) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_MISSINGEND, \
+                               "%s:%i:%i:Missing end tag for \"%s\".", \
+                               context->showname ? context->showname : context->basename, \
+                               context->linenum, \
+                               context->colnum, \
+                               qname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_EXTRACONTENT(context) { context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_EXTRACONTENT, "%s:%i:%i:Extra content at end of resource.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+#define ERROR_EXTRACONTENT(context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_EXTRACONTENT, \
+                               "%s:%i:%i:Extra content at end of resource.", \
+                               context->showname ? context->showname : context->basename, \
+                               context->linenum, \
+                               context->colnum); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_WRONGEND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_WRONGEND, "%s:%i:%i:Incorrect end tag \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_qname); goto error; }
+#define ERROR_WRONGEND(context,qname) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_WRONGEND, \
+                              "%s:%i:%i:Incorrect end tag \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              context->node_linenum, \
+                              context->node_colnum, \
+                              qname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_ENTITY(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_ENTITY, "%s:%i:%i:Incorrect entity reference.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+#define ERROR_ENTITY(context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_ENTITY, \
+                              "%s:%i:%i:Incorrect entity reference.", \
+                              context->showname ? context->showname : context->basename, \
+                              context->linenum, \
+                              context->colnum); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_QNAME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "%s:%i:%i:Could not parse QName \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_qname); goto error; }
+#define ERROR_NS_QNAME(context,qname) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, \
+                              "%s:%i:%i:Could not parse QName \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              context->node_linenum, \
+                              context->node_colnum, \
+                              qname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_QNAME_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, "%s:%i:%i:Could not parse QName \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->qname); goto error; }
+#define ERROR_NS_QNAME_ATTR(context, data) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_QNAME, \
+                              "%s:%i:%i:Could not parse QName \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              data->linenum, \
+                              data->colnum, \
+                              data->qname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_NOTFOUND(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "%s:%i:%i:Could not find namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, context->node_linenum, context->node_colnum, context->parser->priv->event_prefix); goto error; }
+#define ERROR_NS_NOTFOUND(context, prefix) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, \
+                              "%s:%i:%i:Could not find namespace for prefix \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              context->node_linenum, \
+                              context->node_colnum, \
+                              prefix); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_NOTFOUND_ATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, "%s:%i:%i:Could not find namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->prefix); goto error; }
+#define ERROR_NS_NOTFOUND_ATTR(context, data) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_NOTFOUND, \
+                              "%s:%i:%i:Could not find namespace for prefix \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              data->linenum, \
+                              data->colnum, \
+                              data->prefix); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_DUPATTR(context, data) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, "%s:%i:%i:Duplicate expanded name for attribute \"%s\".", context->showname ? context->showname : context->basename, data->linenum, data->colnum, data->qname); goto error; }
+#define ERROR_NS_DUPATTR(context, data) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_DUPATTR, \
+                              "%s:%i:%i:Duplicate expanded name for attribute \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              data->linenum, \
+                              data->colnum, \
+                              data->qname); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_NS_INVALID(context, prefix) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, "%s:%i:%i:Invalid namespace for prefix \"%s\".", context->showname ? context->showname : context->basename, context->attr_linenum, context->attr_colnum, prefix); goto error; }
+#define ERROR_NS_INVALID(context, prefix) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_NS_INVALID, \
+                              "%s:%i:%i:Invalid namespace for prefix \"%s\".", \
+                              context->showname ? context->showname : context->basename, \
+                              context->attr_linenum, \
+                              context->attr_colnum, \
+                              prefix); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_BOM_ENCODING(context, bomenc, encoding) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET, "%s:%i:%i:Detected encoding \"%s\" from BOM, but got \"%s\" from declaration.", context->showname ? context->showname : context->basename, context->linenum, context->colnum, bomenc, encoding); goto error; }
+#define ERROR_BOM_ENCODING(context, bomenc, encoding) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET, \
+                              "%s:%i:%i:Detected encoding \"%s\" from BOM, but got \"%s\" from declaration.", \
+                              context->showname ? context->showname : context->basename, \
+                              context->linenum, \
+                              context->colnum, \
+                              bomenc, \
+                              encoding); \
+  goto error; \
+} G_STMT_END
 
-#define ERROR_FIXME(context) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, "%s:%i:%i:Unsupported feature.", context->showname ? context->showname : context->basename, context->linenum, context->colnum); goto error; }
+#define ERROR_FIXME(context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_OTHER, \
+                              "%s:%i:%i:Unsupported feature.", \
+                              context->showname ? context->showname : context->basename, \
+                              context->linenum, \
+                              context->colnum); \
+  goto error; \
+} G_STMT_END
 
 #define EAT_SPACES(line, buf, bufsize, context)                         \
     while((bufsize < 0 || (line) - buf < bufsize)) {                    \
@@ -1056,7 +1176,14 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
         cur = g_utf8_next_char(cur); context->colnum++;                 \
     }
 
-#define CHECK_BUFFER(c, num, buf, bufsize, context) if (c - buf + num > bufsize) { context->parser->priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, "Insufficient buffer for XML declaration\n"); goto error; }
+#define CHECK_BUFFER(c, num, buf, bufsize, context) G_STMT_START { \
+  AxingXmlParserPrivate *__priv = axing_xml_parser_get_instance_private (context->parser); \
+  if (c - buf + num > bufsize) { \
+    __priv->error = g_error_new(AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_BUFFER, \
+                                "Insufficient buffer for XML declaration"); \
+    goto error; \
+  } \
+} G_STMT_END
 
 #define READ_TO_QUOTE(c, buf, bufsize, context, quot) EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '=') { ERROR_SYNTAX(context); } c += 1; context->colnum += 1; EAT_SPACES (c, buf, bufsize, context); CHECK_BUFFER (c, 1, buf, bufsize, context); if (c[0] != '"' && c[0] != '\'') { ERROR_SYNTAX(context); } quot = c[0]; c += 1; context->colnum += 1;
 
@@ -1066,9 +1193,9 @@ context_resource_read_cb (AxingResource *resource,
                           GAsyncResult  *result,
                           ParserContext *context)
 {
-    context->srcstream = G_INPUT_STREAM (axing_resource_read_finish (resource, result,
-                                                                     &(context->parser->priv->error)));
-    if (context->parser->priv->error) {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+    context->srcstream = G_INPUT_STREAM (axing_resource_read_finish (resource, result, &priv->error));
+    if (priv->error) {
         context_complete (context);
         return;
     }
@@ -1078,12 +1205,14 @@ context_resource_read_cb (AxingResource *resource,
 static void
 context_start_async (ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+
     context->datastream = g_data_input_stream_new (context->srcstream);
 
     g_buffered_input_stream_fill_async (G_BUFFERED_INPUT_STREAM (context->datastream),
                                         1024,
                                         G_PRIORITY_DEFAULT,
-                                        context->parser->priv->cancellable,
+                                        priv->cancellable,
                                         (GAsyncReadyCallback) context_start_cb,
                                         context);
 }
@@ -1093,13 +1222,15 @@ context_start_cb (GBufferedInputStream *stream,
                   GAsyncResult         *res,
                   ParserContext        *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+
     g_buffered_input_stream_fill_finish (stream, res, NULL);
     if (context->state == PARSER_STATE_START || context->state == PARSER_STATE_TEXTDECL) {
         if (!context->bom_checked) {
             gboolean reencoded;
             context->bom_checked = TRUE;
             reencoded = context_parse_bom (context);
-            if (context->parser->priv->error) {
+            if (priv->error) {
                 context_complete (context);
                 return;
             }
@@ -1107,7 +1238,7 @@ context_start_cb (GBufferedInputStream *stream,
                 g_buffered_input_stream_fill_async (G_BUFFERED_INPUT_STREAM (context->datastream),
                                                     1024,
                                                     G_PRIORITY_DEFAULT,
-                                                    context->parser->priv->cancellable,
+                                                    priv->cancellable,
                                                     (GAsyncReadyCallback) context_start_cb,
                                                     context);
                 return;
@@ -1115,7 +1246,7 @@ context_start_cb (GBufferedInputStream *stream,
         }
 
         context_parse_xml_decl (context);
-        if (context->parser->priv->error) {
+        if (priv->error) {
             context_complete (context);
             return;
         }
@@ -1128,7 +1259,7 @@ context_start_cb (GBufferedInputStream *stream,
     g_data_input_stream_read_upto_async (context->datastream,
                                          " ", -1,
                                          G_PRIORITY_DEFAULT,
-                                         context->parser->priv->cancellable,
+                                         priv->cancellable,
                                          (GAsyncReadyCallback) context_read_data_cb,
                                          context);
 }
@@ -1138,8 +1269,9 @@ context_read_data_cb (GDataInputStream *stream,
                       GAsyncResult     *res,
                       ParserContext    *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     gchar *line;
-    if (context->parser->priv->error) {
+    if (priv->error) {
         context_complete (context);
         return;
     }
@@ -1150,8 +1282,8 @@ context_read_data_cb (GDataInputStream *stream,
         g_free (line);
     }
     else {
-        line = g_data_input_stream_read_upto_finish (stream, res, NULL, &(context->parser->priv->error));
-        if (line == NULL && context->parser->priv->error == NULL) {
+        line = g_data_input_stream_read_upto_finish (stream, res, NULL, &priv->error);
+        if (line == NULL && priv->error == NULL) {
             /* https://bugzilla.gnome.org/show_bug.cgi?id=692101
                g_data_input_stream_read_upto_finish returns NULL when it should return ""
                when at one of the stop chars. This happens, e.g., when there are two stop
@@ -1163,13 +1295,13 @@ context_read_data_cb (GDataInputStream *stream,
                 goto bug692101;
             context_check_end (context);
         }
-        if (line == NULL || context->parser->priv->error) {
+        if (line == NULL || priv->error) {
             context_complete (context);
             return;
         }
         context_parse_data (context, line);
         g_free (line);
-        if (context->parser->priv->error) {
+        if (priv->error) {
             context_complete (context);
             return;
         }
@@ -1177,14 +1309,14 @@ context_read_data_cb (GDataInputStream *stream,
         if (g_buffered_input_stream_get_available (G_BUFFERED_INPUT_STREAM (context->datastream)) > 0) {
             char eol[2] = {0, 0};
             eol[0] = g_data_input_stream_read_byte (context->datastream,
-                                                    context->parser->priv->cancellable,
-                                                    &(context->parser->priv->error));
-            if (context->parser->priv->error) {
+                                                    priv->cancellable,
+                                                    &priv->error);
+            if (priv->error) {
                 context_complete (context);
                 return;
             }
             context_parse_data (context, eol);
-            if (context->parser->priv->error) {
+            if (priv->error) {
                 context_complete (context);
                 return;
             }
@@ -1194,7 +1326,7 @@ context_read_data_cb (GDataInputStream *stream,
         g_data_input_stream_read_upto_async (context->datastream,
                                              " ", -1,
                                              G_PRIORITY_DEFAULT,
-                                             context->parser->priv->cancellable,
+                                             priv->cancellable,
                                              (GAsyncReadyCallback) context_read_data_cb,
                                              context);
 }
@@ -1202,10 +1334,12 @@ context_read_data_cb (GDataInputStream *stream,
 static void
 context_check_end (ParserContext *context)
 {
-    if (context->parser->priv->event_stack->len != context->event_stack_root) {
-        ParserStackFrame frame = g_array_index (context->parser->priv->event_stack,
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+
+    if (priv->event_stack->len != context->event_stack_root) {
+        ParserStackFrame frame = g_array_index (priv->event_stack,
                                                 ParserStackFrame,
-                                                context->parser->priv->event_stack->len - 1);
+                                                priv->event_stack->len - 1);
         ERROR_MISSINGEND(context, frame.qname);
     }
     if (context->state != context->init_state &&
@@ -1217,14 +1351,16 @@ context_check_end (ParserContext *context)
 }
 
 static void
-context_set_encoding (ParserContext *context, const char *encoding)
+context_set_encoding (ParserContext *context,
+                      const char *encoding)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     GConverter *converter;
     GInputStream *cstream;
     converter = (GConverter *) g_charset_converter_new ("UTF-8", encoding, NULL);
     if (converter == NULL) {
-        context->parser->priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET,
-                                                    "Unsupported character encoding %s\n", encoding);
+        priv->error = g_error_new (AXING_XML_PARSER_ERROR, AXING_XML_PARSER_ERROR_CHARSET,
+                                   "Unsupported character encoding %s\n", encoding);
         return;
     }
     cstream = g_converter_input_stream_new (G_INPUT_STREAM (context->datastream), converter);
@@ -1301,6 +1437,7 @@ context_parse_bom (ParserContext *context)
 static void
 context_parse_xml_decl (ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     gsize bufsize;
     guchar *buf, *c;
     char quot;
@@ -1334,7 +1471,8 @@ context_parse_xml_decl (ParserContext *context)
 
         CHECK_BUFFER (c, 4, buf, bufsize, context);
         if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
-            context->parser->priv->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
+            context->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
+            priv->xml_version = context->xml_version;
         }
         else {
             ERROR_SYNTAX(context);
@@ -1500,8 +1638,11 @@ context_parse_xml_decl (ParserContext *context)
 }
 
 static void
-context_parse_data (ParserContext *context, char *line)
+context_parse_data (ParserContext *context,
+                    char          *line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+
     /* The parsing functions make these assumptions about the data that gets passed in:
        1) It always has complete UTF-8 characters.
        2) It always terminates somewhere where a space is permissable, e.g. never in
@@ -1523,10 +1664,10 @@ context_parse_data (ParserContext *context, char *line)
             }
             if (c[0] == '<') {
                 if (context->state == PARSER_STATE_TEXT && context->cur_text != NULL) {
-                    g_free (context->parser->priv->event_content);
-                    context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                    g_free (priv->event_content);
+                    priv->event_content = g_string_free (context->cur_text, FALSE);
                     context->cur_text = NULL;
-                    context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
+                    priv->event_type = AXING_STREAM_EVENT_CONTENT;
 
                     axing_stream_emit_event (AXING_STREAM (context->parser));
                     parser_clean_event_data (context->parser);
@@ -1590,7 +1731,7 @@ context_parse_data (ParserContext *context, char *line)
         default:
             g_assert_not_reached ();
         }
-        if (context->parser->priv->error != NULL) {
+        if (priv->error != NULL) {
             return;
         }
     }
@@ -1602,10 +1743,12 @@ static void
 context_parse_doctype (ParserContext  *context,
                        char          **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
+
     switch (context->state) {
     case PARSER_STATE_START:
     case PARSER_STATE_PROLOG:
-        if (context->parser->priv->doctype != NULL) {
+        if (priv->doctype != NULL) {
             ERROR_SYNTAX(context);
         }
         if (!g_str_has_prefix (*line, "<!DOCTYPE")) {
@@ -1632,8 +1775,8 @@ context_parse_doctype (ParserContext  *context,
         XML_GET_NAME(line, doctype, context);
         if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0'))
             ERROR_SYNTAX(context);
-        context->parser->priv->doctype = axing_dtd_schema_new ();
-        axing_dtd_schema_set_doctype (context->parser->priv->doctype, doctype);
+        priv->doctype = axing_dtd_schema_new ();
+        axing_dtd_schema_set_doctype (priv->doctype, doctype);
         g_free (doctype);
         context->doctype_state = DOCTYPE_STATE_NAME;
     }
@@ -1686,7 +1829,7 @@ context_parse_doctype (ParserContext  *context,
             if (c == context->quotechar) {
                 char *public = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                axing_dtd_schema_set_public_id (context->parser->priv->doctype, public);
+                axing_dtd_schema_set_public_id (priv->doctype, public);
                 g_free (public);
                 context->doctype_state = DOCTYPE_STATE_SYSTEM;
                 (*line)++; context->colnum++;
@@ -1724,7 +1867,7 @@ context_parse_doctype (ParserContext  *context,
             if ((*line)[0] == context->quotechar) {
                 char *system = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                axing_dtd_schema_set_system_id (context->parser->priv->doctype, system);
+                axing_dtd_schema_set_system_id (priv->doctype, system);
                 g_free (system);
                 context->doctype_state = DOCTYPE_STATE_EXTID;
                 (*line)++; context->colnum++;
@@ -1766,7 +1909,7 @@ context_parse_doctype (ParserContext  *context,
         }
         else if ((*line)[0] == '%') {
             context_parse_parameter (context, line);
-            if (context->parser->priv->error)
+            if (priv->error)
                 goto error;
         }
         else if (g_str_has_prefix (*line, "<!ELEMENT")) {
@@ -1850,6 +1993,7 @@ context_parse_doctype (ParserContext  *context,
 
 static void
 context_parse_doctype_element (ParserContext *context, char **line) {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ELEMENT"));
         (*line) += 9; context->colnum += 9;
@@ -1919,10 +2063,10 @@ context_parse_doctype_element (ParserContext *context, char **line) {
             ERROR_SYNTAX(context);
         value = g_string_free (context->cur_text, FALSE);
         context->cur_text = NULL;
-        axing_dtd_schema_add_element (context->parser->priv->doctype,
+        axing_dtd_schema_add_element (priv->doctype,
                                       context->cur_qname,
                                       value,
-                                      &(context->parser->priv->error));
+                                      &priv->error);
         g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
@@ -1935,6 +2079,7 @@ context_parse_doctype_element (ParserContext *context, char **line) {
 
 static void
 context_parse_doctype_attlist (ParserContext *context, char **line) {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ATTLIST"));
         (*line) += 9; context->colnum += 9;
@@ -2012,10 +2157,10 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
             ERROR_SYNTAX(context);
         value = g_string_free (context->cur_text, FALSE);
         context->cur_text = NULL;
-        axing_dtd_schema_add_attlist (context->parser->priv->doctype,
+        axing_dtd_schema_add_attlist (priv->doctype,
                                       context->cur_qname,
                                       value,
-                                      &(context->parser->priv->error));
+                                      &priv->error);
         g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
@@ -2029,6 +2174,7 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
 
 static void
 context_parse_doctype_notation (ParserContext *context, char **line) {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!NOTATION"));
         (*line) += 10; context->colnum += 10;
@@ -2157,7 +2303,7 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
             return;
         if ((*line)[0] != '>')
             ERROR_SYNTAX(context);
-        axing_dtd_schema_add_notation (context->parser->priv->doctype,
+        axing_dtd_schema_add_notation (priv->doctype,
                                        context->cur_qname,
                                        context->decl_public,
                                        context->decl_system);
@@ -2181,6 +2327,7 @@ context_parse_doctype_notation (ParserContext *context, char **line) {
 
 static void
 context_parse_doctype_entity (ParserContext *context, char **line) {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
         g_assert (g_str_has_prefix(*line, "<!ENTITY"));
         (*line) += 8; context->colnum += 8;
@@ -2351,13 +2498,13 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
             if (context->cur_text) {
                 char *value = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                axing_dtd_schema_add_parameter (context->parser->priv->doctype,
+                axing_dtd_schema_add_parameter (priv->doctype,
                                                 context->cur_qname,
                                                 value);
                 g_free (value);
             }
             else {
-                axing_dtd_schema_add_external_parameter (context->parser->priv->doctype,
+                axing_dtd_schema_add_external_parameter (priv->doctype,
                                                          context->cur_qname,
                                                          context->decl_public,
                                                          context->decl_system);
@@ -2367,20 +2514,20 @@ context_parse_doctype_entity (ParserContext *context, char **line) {
             if (context->cur_text) {
                 char *value = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                axing_dtd_schema_add_entity (context->parser->priv->doctype,
+                axing_dtd_schema_add_entity (priv->doctype,
                                              context->cur_qname,
                                              value);
                 g_free (value);
             }
             else if (context->decl_ndata) {
-                axing_dtd_schema_add_unparsed_entity (context->parser->priv->doctype,
+                axing_dtd_schema_add_unparsed_entity (priv->doctype,
                                                       context->cur_qname,
                                                       context->decl_public,
                                                       context->decl_system,
                                                       context->decl_ndata);
             }
             else {
-                axing_dtd_schema_add_external_entity (context->parser->priv->doctype,
+                axing_dtd_schema_add_external_entity (priv->doctype,
                                                       context->cur_qname,
                                                       context->decl_public,
                                                       context->decl_system);
@@ -2416,6 +2563,7 @@ static void
 context_parse_parameter (ParserContext  *context,
                          char          **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     const char *beg = *line + 1;
     char *entname = NULL;
     char *value = NULL;
@@ -2450,7 +2598,7 @@ context_parse_parameter (ParserContext  *context,
     entname = g_strndup (beg, *line - beg);
     (*line)++; colnum++;
 
-    value = axing_dtd_schema_get_parameter (context->parser->priv->doctype, entname);
+    value = axing_dtd_schema_get_parameter (priv->doctype, entname);
     if (value) {
         ParserContext *entctxt = context_new (context->parser);
         /* not duping these two, NULL them before free below */
@@ -2460,12 +2608,13 @@ context_parse_parameter (ParserContext  *context,
         entctxt->state = context->state;
         entctxt->init_state = context->state;
         entctxt->doctype_state = context->doctype_state;
-        entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+        entctxt->xml_version = context->xml_version;
+        entctxt->event_stack_root = priv->event_stack->len;
         entctxt->cur_text = context->cur_text;
         context->cur_text = NULL;
 
         context_parse_data (entctxt, value);
-        if (entctxt->parser->priv->error == NULL) {
+        if (priv->error == NULL) {
             if (entctxt->state != context->state
                 || entctxt->doctype_state != context->doctype_state)
                 ERROR_SYNTAX(entctxt);
@@ -2491,6 +2640,7 @@ context_parse_parameter (ParserContext  *context,
 static void
 context_parse_cdata (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->state != PARSER_STATE_CDATA) {
         if (!g_str_has_prefix (*line, "<![CDATA[")) {
             ERROR_SYNTAX(context);
@@ -2504,9 +2654,9 @@ context_parse_cdata (ParserContext *context, char **line)
         if ((*line)[0] == ']' && (*line)[1] == ']' && (*line)[2] == '>') {
             (*line) += 3; context->colnum += 3;
 
-            context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+            priv->event_content = g_string_free (context->cur_text, FALSE);
             context->cur_text = NULL;
-            context->parser->priv->event_type = AXING_STREAM_EVENT_CDATA;
+            priv->event_type = AXING_STREAM_EVENT_CDATA;
 
             axing_stream_emit_event (AXING_STREAM (context->parser));
             parser_clean_event_data (context->parser);
@@ -2523,6 +2673,7 @@ context_parse_cdata (ParserContext *context, char **line)
 static void
 context_parse_comment (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->state != PARSER_STATE_COMMENT) {
         if (!g_str_has_prefix (*line, "<!--")) {
             ERROR_SYNTAX(context);
@@ -2546,9 +2697,9 @@ context_parse_comment (ParserContext *context, char **line)
                 context->cur_text = NULL;
             }
             else {
-                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                priv->event_content = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                context->parser->priv->event_type = AXING_STREAM_EVENT_COMMENT;
+                priv->event_type = AXING_STREAM_EVENT_COMMENT;
 
                 axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
@@ -2566,12 +2717,13 @@ context_parse_comment (ParserContext *context, char **line)
 static void
 context_parse_instruction (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->state != PARSER_STATE_INSTRUCTION) {
         if (!g_str_has_prefix (*line, "<?")) {
             ERROR_SYNTAX(context);
         }
         (*line) += 2; context->colnum += 2;
-        XML_GET_NAME(line, context->parser->priv->event_qname, context);
+        XML_GET_NAME(line, priv->event_qname, context);
         if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '?'))
             ERROR_SYNTAX(context);
 
@@ -2596,9 +2748,9 @@ context_parse_instruction (ParserContext *context, char **line)
                 context->cur_text = NULL;
             }
             else {
-                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                priv->event_content = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                context->parser->priv->event_type = AXING_STREAM_EVENT_INSTRUCTION;
+                priv->event_type = AXING_STREAM_EVENT_INSTRUCTION;
 
                 axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
@@ -2616,6 +2768,7 @@ context_parse_instruction (ParserContext *context, char **line)
 static void
 context_parse_end_element (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     ParserStackFrame frame;
     const char *colon;
     if (context->state != PARSER_STATE_ENDELM) {
@@ -2623,7 +2776,7 @@ context_parse_end_element (ParserContext *context, char **line)
         context->node_linenum = context->linenum;
         context->node_colnum = context->colnum;
         (*line) += 2; context->colnum += 2;
-        XML_GET_NAME(line, context->parser->priv->event_qname, context);
+        XML_GET_NAME(line, priv->event_qname, context);
         if (!(XML_IS_SPACE(*line, context) || (*line)[0] == '\0' || (*line)[0] == '>'))
             ERROR_SYNTAX(context);
     }
@@ -2637,60 +2790,55 @@ context_parse_end_element (ParserContext *context, char **line)
     }
     (*line)++; context->colnum++;
 
-    colon = strchr (context->parser->priv->event_qname, ':');
+    colon = strchr (priv->event_qname, ':');
     if (colon != NULL) {
         gunichar cp;
         const char *localname;
         const char *namespace;
-        if (colon == context->parser->priv->event_qname) {
-            ERROR_NS_QNAME(context);
+        if (colon == priv->event_qname) {
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
         localname = colon + 1;
         if (localname[0] == '\0' || strchr (localname, ':')) {
-            ERROR_NS_QNAME(context);
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
         cp = g_utf8_get_char (localname);
         if (!XML_IS_NAME_START_CHAR(cp)) {
-            ERROR_NS_QNAME(context);
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
-        context->parser->priv->event_prefix = g_strndup (context->parser->priv->event_qname,
-                                                         colon - context->parser->priv->event_qname);
-        context->parser->priv->event_localname = g_strdup (localname);
-        namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser),
-                                                 context->parser->priv->event_prefix);
+        priv->event_prefix = g_strndup (priv->event_qname, colon - priv->event_qname);
+        priv->event_localname = g_strdup (localname);
+        namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser), priv->event_prefix);
         if (namespace == NULL) {
-            ERROR_NS_NOTFOUND(context);
+            ERROR_NS_NOTFOUND(context, priv->event_prefix);
         }
-        context->parser->priv->event_namespace = g_strdup (namespace);
+        priv->event_namespace = g_strdup (namespace);
     }
     else {
         const char *namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser), "");
         if (namespace != NULL)
-            context->parser->priv->event_namespace = g_strdup (namespace);
+            priv->event_namespace = g_strdup (namespace);
     }
 
-    if (context->parser->priv->event_stack->len <= context->event_stack_root) {
+    if (priv->event_stack->len <= context->event_stack_root) {
         context->linenum = context->node_linenum;
         context->colnum = context->node_colnum;
         ERROR_EXTRACONTENT(context);
     }
-    frame = g_array_index (context->parser->priv->event_stack,
-                           ParserStackFrame,
-                           context->parser->priv->event_stack->len - 1);
-    g_array_remove_index (context->parser->priv->event_stack,
-                          context->parser->priv->event_stack->len - 1);
-    if (!g_str_equal (frame.qname, context->parser->priv->event_qname)) {
-        ERROR_WRONGEND(context);
+    frame = g_array_index (priv->event_stack, ParserStackFrame, priv->event_stack->len - 1);
+    g_array_remove_index (priv->event_stack, priv->event_stack->len - 1);
+    if (!g_str_equal (frame.qname, priv->event_qname)) {
+        ERROR_WRONGEND(context, priv->event_qname);
     }
     if (frame.nshash) {
         g_hash_table_destroy (frame.nshash);
     }
     g_free (frame.qname);
 
-    context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
+    priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
     axing_stream_emit_event (AXING_STREAM (context->parser));
 
-    if (context->parser->priv->event_stack->len == context->event_stack_root)
+    if (priv->event_stack->len == context->event_stack_root)
         context->state = context->init_state;
     else
         context->state = PARSER_STATE_TEXT;
@@ -2736,6 +2884,7 @@ context_parse_start_element (ParserContext *context, char **line)
 static void
 context_parse_attrs (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->state == PARSER_STATE_STELM_BASE) {
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '>') {
@@ -2869,7 +3018,7 @@ context_parse_attrs (ParserContext *context, char **line)
                     g_string_append_len (context->cur_text, *line, cur - *line);
                 context_parse_entity (context, &cur);
                 *line = cur;
-                if (context->parser->priv->error)
+                if (priv->error)
                     goto error;
                 continue;
             }
@@ -2996,6 +3145,7 @@ context_parse_entity (ParserContext *context, char **line)
 static void
 context_process_entity (ParserContext *context, const char *entname, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     ParserContext *parent;
     char *value=NULL, *system=NULL, *public=NULL, *ndata=NULL;
 
@@ -3005,7 +3155,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
         }
     }
 
-    if (axing_dtd_schema_get_entity_full (context->parser->priv->doctype, entname,
+    if (axing_dtd_schema_get_entity_full (priv->doctype, entname,
                                           &value, &public, &system, &ndata)) {
         if (value) {
             ParserContext *entctxt = context_new (context->parser);
@@ -3016,12 +3166,13 @@ context_process_entity (ParserContext *context, const char *entname, char **line
             entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
             entctxt->state = context->state;
             entctxt->init_state = context->state;
-            entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+            entctxt->xml_version = context->xml_version;
+            entctxt->event_stack_root = priv->event_stack->len;
             entctxt->cur_text = context->cur_text;
             context->cur_text = NULL;
 
             context_parse_data (entctxt, value);
-            if (entctxt->parser->priv->error == NULL)
+            if (priv->error == NULL)
                 context_check_end (entctxt);
 
             context->state = entctxt->state;
@@ -3041,24 +3192,25 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 ERROR_ENTITY(context);
             }
 
-            if (context->parser->priv->resolver)
-                resolver = g_object_ref (context->parser->priv->resolver);
+            if (priv->resolver)
+                resolver = g_object_ref (priv->resolver);
             else
                 resolver = axing_resolver_get_default ();
 
-            if (context->parser->priv->async) {
+            if (priv->async) {
                 ParserContext *entctxt;
                 entctxt = context_new (context->parser);
                 entctxt->parent = context;
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
-                entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+                entctxt->xml_version = context->xml_version;
+                entctxt->event_stack_root = priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
                 axing_resolver_resolve_async (resolver, context->resource,
                                               NULL, system, public, "xml:entity",
-                                              context->parser->priv->cancellable,
+                                              priv->cancellable,
                                               (GAsyncReadyCallback) context_process_entity_resolved,
                                               entctxt);
                 context->pause_line = g_strdup (*line);
@@ -3070,9 +3222,9 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 AxingResource *resource;
                 resource = axing_resolver_resolve (resolver, context->resource,
                                                    NULL, system, public, "xml:entity",
-                                                   context->parser->priv->cancellable,
-                                                   &(context->parser->priv->error));
-                if (context->parser->priv->error) {
+                                                   priv->cancellable,
+                                                   &priv->error);
+                if (priv->error) {
                     g_object_unref (resolver);
                     goto error;
                 }
@@ -3084,7 +3236,8 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
-                entctxt->event_stack_root = entctxt->parser->priv->event_stack->len;
+                entctxt->xml_version = context->xml_version;
+                entctxt->event_stack_root = priv->event_stack->len;
                 entctxt->cur_text = context->cur_text;
                 context->cur_text = NULL;
 
@@ -3110,18 +3263,18 @@ context_process_entity_resolved (AxingResolver *resolver,
                                  GAsyncResult  *result,
                                  ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     AxingResource *resource;
 
-    resource = axing_resolver_resolve_finish (resolver, result,
-                                              &(context->parser->priv->error));
-    if (context->parser->priv->error)
+    resource = axing_resolver_resolve_finish (resolver, result, &priv->error);
+    if (priv->error)
         goto error;
 
     context->resource = resource;
     context->basename = resource_get_basename (resource);
 
     axing_resource_read_async (context->resource,
-                               context->parser->priv->cancellable,
+                               priv->cancellable,
                                (GAsyncReadyCallback) context_resource_read_cb,
                                context);
  error:
@@ -3146,17 +3299,18 @@ context_process_entity_finish (ParserContext *context)
 static void
 context_parse_text (ParserContext *context, char **line)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     char *cur = *line;
     while (cur[0] != '\0') {
         if (cur[0] == '<') {
             if (context->cur_text) {
-                g_free (context->parser->priv->event_content);
+                g_free (priv->event_content);
                 if (cur != *line)
                     g_string_append_len (context->cur_text, *line, cur - *line);
                 *line = cur;
-                context->parser->priv->event_content = g_string_free (context->cur_text, FALSE);
+                priv->event_content = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
-                context->parser->priv->event_type = AXING_STREAM_EVENT_CONTENT;
+                priv->event_type = AXING_STREAM_EVENT_CONTENT;
 
                 axing_stream_emit_event (AXING_STREAM (context->parser));
                 parser_clean_event_data (context->parser);
@@ -3170,7 +3324,7 @@ context_parse_text (ParserContext *context, char **line)
                 g_string_append_len (context->cur_text, *line, cur - *line);
             context_parse_entity (context, &cur);
             *line = cur;
-            if (context->parser->priv->error)
+            if (priv->error)
                 goto error;
             continue;
         }
@@ -3189,48 +3343,48 @@ context_parse_text (ParserContext *context, char **line)
 static void
 context_trigger_start_element (ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     ParserStackFrame frame;
     const char *colon;
 
-    g_free (context->parser->priv->event_qname);
-    context->parser->priv->event_qname = context->cur_qname;
+    g_free (priv->event_qname);
+    priv->event_qname = context->cur_qname;
     context->cur_qname = NULL;
 
-    frame.qname = g_strdup (context->parser->priv->event_qname);
+    frame.qname = g_strdup (priv->event_qname);
     frame.nshash = context->cur_nshash;
     context->cur_nshash = NULL;
-    g_array_append_val (context->parser->priv->event_stack, frame);
+    g_array_append_val (priv->event_stack, frame);
 
-    colon = strchr (context->parser->priv->event_qname, ':');
+    colon = strchr (priv->event_qname, ':');
     if (colon != NULL) {
         gunichar cp;
         const char *localname;
         const char *namespace;
-        if (colon == context->parser->priv->event_qname) {
-            ERROR_NS_QNAME(context);
+        if (colon == priv->event_qname) {
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
         localname = colon + 1;
         if (localname[0] == '\0' || strchr (localname, ':')) {
-            ERROR_NS_QNAME(context);
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
         cp = g_utf8_get_char (localname);
         if (!XML_IS_NAME_START_CHAR(cp)) {
-            ERROR_NS_QNAME(context);
+            ERROR_NS_QNAME(context, priv->event_qname);
         }
-        context->parser->priv->event_prefix = g_strndup (context->parser->priv->event_qname,
-                                                         colon - context->parser->priv->event_qname);
-        context->parser->priv->event_localname = g_strdup (localname);
+        priv->event_prefix = g_strndup (priv->event_qname, colon - priv->event_qname);
+        priv->event_localname = g_strdup (localname);
         namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser),
-                                                 context->parser->priv->event_prefix);
+                                                 priv->event_prefix);
         if (namespace == NULL) {
-            ERROR_NS_NOTFOUND(context);
+            ERROR_NS_NOTFOUND(context, priv->event_prefix);
         }
-        context->parser->priv->event_namespace = g_strdup (namespace);
+        priv->event_namespace = g_strdup (namespace);
     }
     else {
         const char *namespace = namespace_map_get_namespace (AXING_NAMESPACE_MAP (context->parser), "");
         if (namespace != NULL)
-            context->parser->priv->event_namespace = g_strdup (namespace);
+            priv->event_namespace = g_strdup (namespace);
     }
 
     if (context->cur_attrs) {
@@ -3239,8 +3393,8 @@ context_trigger_start_element (ParserContext *context)
         guint num = g_hash_table_size (context->cur_attrs);
         guint cur;
 
-        context->parser->priv->event_attrkeys = g_new0 (char *, num + 1);
-        context->parser->priv->event_attrvals = g_new0 (AttributeData *, num + 1);
+        priv->event_attrkeys = g_new0 (char *, num + 1);
+        priv->event_attrvals = g_new0 (AttributeData *, num + 1);
 
         cur = 0;
         /* We drop from the hash at each iteration, stealing the key and
@@ -3279,18 +3433,16 @@ context_trigger_start_element (ParserContext *context)
                 }
                 data->namespace = g_strdup (namespace);
                 for (pre = 0; pre < cur; pre++) {
-                    if (context->parser->priv->event_attrvals[pre]->namespace &&
-                        g_str_equal (context->parser->priv->event_attrvals[pre]->namespace,
-                                     data->namespace) &&
-                        g_str_equal (context->parser->priv->event_attrvals[pre]->localname,
-                                     data->localname)) {
+                    if (priv->event_attrvals[pre]->namespace &&
+                        g_str_equal (priv->event_attrvals[pre]->namespace, data->namespace) &&
+                        g_str_equal (priv->event_attrvals[pre]->localname, data->localname)) {
                         ERROR_NS_DUPATTR(context, data);
                     }
                 }
             }
 
-            context->parser->priv->event_attrkeys[cur] = qname;
-            context->parser->priv->event_attrvals[cur] = data;
+            priv->event_attrkeys[cur] = qname;
+            priv->event_attrvals[cur] = data;
             cur++;
             g_hash_table_steal (context->cur_attrs, key);
         }
@@ -3298,7 +3450,7 @@ context_trigger_start_element (ParserContext *context)
         context->cur_attrs = NULL;
     }
 
-    context->parser->priv->event_type = AXING_STREAM_EVENT_START_ELEMENT;
+    priv->event_type = AXING_STREAM_EVENT_START_ELEMENT;
     axing_stream_emit_event (AXING_STREAM (context->parser));
 
     if (context->empty) {
@@ -3306,16 +3458,15 @@ context_trigger_start_element (ParserContext *context)
             g_hash_table_destroy (frame.nshash);
         }
         g_free (frame.qname);
-        g_array_remove_index (context->parser->priv->event_stack,
-                              context->parser->priv->event_stack->len - 1);
-        context->parser->priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
+        g_array_remove_index (priv->event_stack, priv->event_stack->len - 1);
+        priv->event_type = AXING_STREAM_EVENT_END_ELEMENT;
         axing_stream_emit_event (AXING_STREAM (context->parser));
     }
 
  error:
     parser_clean_event_data (context->parser);
     if (context->empty &&
-        (context->parser->priv->event_stack->len == context->event_stack_root)) {
+        (priv->event_stack->len == context->event_stack_root)) {
         context->state = context->init_state;
         if (context->state == PARSER_STATE_PROLOG)
             context->state = PARSER_STATE_EPILOG;
@@ -3329,10 +3480,11 @@ context_trigger_start_element (ParserContext *context)
 static void
 context_complete (ParserContext *context)
 {
+    AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     if (context->parent)
         context_process_entity_finish (context);
     else
-        g_simple_async_result_complete (context->parser->priv->result);
+        g_simple_async_result_complete (priv->result);
 }
 
 static char *
