@@ -37,6 +37,9 @@ clean:
 	rm -f $(TESTS)
 	rm -f *.o
 
+check: all run-tests
+	./run-tests
+
 gitignore: Makefile
 	( echo "*~" ; \
 	  echo "*.o" ; \
