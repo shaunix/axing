@@ -20,8 +20,8 @@
  * Author: Shaun McCance  <shaunm@gnome.org>
  */
 
-#ifndef __AXI_DTD_SCHEMA_H__
-#define __AXI_DTD_SCHEMA_H__
+#ifndef __AXING_DTD_SCHEMA_H__
+#define __AXING_DTD_SCHEMA_H__
 
 #include <glib-object.h>
 #include <gio/gio.h>
@@ -31,25 +31,10 @@
 
 G_BEGIN_DECLS
 
-#define AXING_TYPE_DTD_SCHEMA            (axing_dtd_schema_get_type ())
-#define AXING_DTD_SCHEMA(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), AXING_TYPE_DTD_SCHEMA, AxingDtdSchema))
-#define AXING_DTD_SCHEMA_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), AXING_TYPE_DTD_SCHEMA, AxingDtdSchemaClass))
-#define AXING_IS_DTD_SCHEMA(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AXING_TYPE_DTD_SCHEMA))
-#define AXING_IS_DTD_SCHEMA_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), AXING_TYPE_DTD_SCHEMA))
-#define AXING_DTD_SCHEMA_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), AXING_TYPE_DTD_SCHEMA, AxingDtdSchemaClass))
+#define AXING_TYPE_DTD_SCHEMA   (axing_dtd_schema_get_type ())
+#define AXING_DTD_SCHEMA_ERROR  (axing_dtd_schema_error_quark ())
 
-#define AXING_DTD_SCHEMA_ERROR axing_dtd_schema_error_quark()
-
-typedef struct _AxingDtdSchema        AxingDtdSchema;
-typedef struct _AxingDtdSchemaPrivate AxingDtdSchemaPrivate;
-typedef struct _AxingDtdSchemaClass   AxingDtdSchemaClass;
-
-struct _AxingDtdSchema {
-    GObject parent;
-
-    /*< private >*/
-    AxingDtdSchemaPrivate *priv;
-};
+G_DECLARE_DERIVABLE_TYPE (AxingDtdSchema, axing_dtd_schema, AXING, DTD_SCHEMA, GObject)
 
 struct _AxingDtdSchemaClass {
     GObjectClass parent_class;
@@ -67,10 +52,9 @@ typedef enum {
     AXING_DTD_SCHEMA_ERROR_OTHER
 } AxingDtdSchemaError;
 
-GType             axing_dtd_schema_get_type        (void);
-GQuark            axing_dtd_schema_error_quark     (void);
+GQuark            axing_dtd_schema_error_quark              (void);
 
-AxingDtdSchema *  axing_dtd_schema_new             (void);
+AxingDtdSchema *  axing_dtd_schema_new                      (void);
 
 void              axing_dtd_schema_set_doctype              (AxingDtdSchema   *dtd,
                                                              const char       *doctype);

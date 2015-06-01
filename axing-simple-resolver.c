@@ -23,14 +23,15 @@
 #include "axing-simple-resolver.h"
 #include "axing-utils.h"
 
-struct _AxingSimpleResolverPrivate {
-    gpointer reserved;
+struct _AxingSimpleResolver
+{
+  AxingResolver parent_instance;
 };
 
-static void      axing_simple_resolver_init           (AxingSimpleResolver       *resolver);
-static void      axing_simple_resolver_class_init     (AxingSimpleResolverClass  *klass);
-static void      axing_simple_resolver_dispose        (GObject                   *object);
-static void      axing_simple_resolver_finalize       (GObject                   *object);
+struct _AxingSimpleResolverClass
+{
+  AxingResolver parent_class;
+};
 
 static AxingResource * simple_resolver_resolve        (AxingResolver        *resolver,
                                                        AxingResource        *base,
@@ -53,41 +54,21 @@ static AxingResource * simple_resolver_resolve_finish (AxingResolver        *res
                                                        GAsyncResult         *result,
                                                        GError              **error);
 
-G_DEFINE_TYPE (AxingSimpleResolver, axing_simple_resolver, AXING_TYPE_RESOLVER);
-
-static void
-axing_simple_resolver_init (AxingSimpleResolver *resolver)
-{
-    resolver->priv = G_TYPE_INSTANCE_GET_PRIVATE (resolver, AXING_TYPE_SIMPLE_RESOLVER,
-                                                  AxingSimpleResolverPrivate);
-}
+G_DEFINE_TYPE (AxingSimpleResolver, axing_simple_resolver, AXING_TYPE_RESOLVER)
 
 static void
 axing_simple_resolver_class_init (AxingSimpleResolverClass *klass)
 {
-    GObjectClass *object_class = G_OBJECT_CLASS (klass);
     AxingResolverClass *resolver_class = AXING_RESOLVER_CLASS (klass);
-
-    g_type_class_add_private (klass, sizeof (AxingSimpleResolverPrivate));
 
     resolver_class->resolve = simple_resolver_resolve;
     resolver_class->resolve_async = simple_resolver_resolve_async;
     resolver_class->resolve_finish = simple_resolver_resolve_finish;
-
-    object_class->dispose = axing_simple_resolver_dispose;
-    object_class->finalize = axing_simple_resolver_finalize;
 }
 
 static void
-axing_simple_resolver_dispose (GObject *object)
+axing_simple_resolver_init (AxingSimpleResolver *resolver)
 {
-    G_OBJECT_CLASS (axing_simple_resolver_parent_class)->dispose (object);
-}
-
-static void
-axing_simple_resolver_finalize (GObject *object)
-{
-    G_OBJECT_CLASS (axing_simple_resolver_parent_class)->finalize (object);
 }
 
 AxingResolver *

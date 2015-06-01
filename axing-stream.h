@@ -28,11 +28,8 @@
 G_BEGIN_DECLS
 
 #define AXING_TYPE_STREAM            (axing_stream_get_type ())
-#define AXING_STREAM(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), AXING_TYPE_STREAM, AxingStream))
-#define AXING_STREAM_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), AXING_TYPE_STREAM, AxingStreamClass))
-#define AXING_IS_STREAM(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AXING_TYPE_STREAM))
-#define AXING_IS_STREAM_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), AXING_TYPE_STREAM))
-#define AXING_STREAM_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), AXING_TYPE_STREAM, AxingStreamClass))
+
+G_DECLARE_DERIVABLE_TYPE (AxingStream, axing_stream, AXING, STREAM, GObject)
 
 typedef enum {
     AXING_STREAM_EVENT_NONE,
@@ -77,17 +74,6 @@ typedef enum {
   get_xml_lang
  */
 
-typedef struct _AxingStream         AxingStream;
-typedef struct _AxingStreamPrivate  AxingStreamPrivate;
-typedef struct _AxingStreamClass    AxingStreamClass;
-
-struct _AxingStream {
-    GObject parent;
-
-    /*< private >*/
-    AxingStreamPrivate *priv;
-};
-
 struct _AxingStreamClass {
     GObjectClass parent_class;
 
@@ -120,8 +106,6 @@ struct _AxingStreamClass {
 };
 
 
-GType                  axing_stream_get_type                (void);
-
 AxingStreamEventType   axing_stream_get_event_type          (AxingStream   *stream);
 const char *           axing_stream_get_event_qname         (AxingStream   *stream);
 const char *           axing_stream_get_event_localname     (AxingStream   *stream);
@@ -144,7 +128,7 @@ void                   axing_stream_emit_event              (AxingStream   *stre
 
 #ifdef FIXME_utility_functions
 void         axing_stream_skip_current_element (AxingStream  *stream);
-gboolean    axing_stream_event_is_empty_element (AxingStreamEvent *event);
+gboolean     axing_stream_event_is_empty_element (AxingStreamEvent *event);
 #endif
 
 G_END_DECLS

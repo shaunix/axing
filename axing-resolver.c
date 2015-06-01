@@ -23,35 +23,38 @@
 #include "axing-resolver.h"
 #include "axing-simple-resolver.h"
 
-struct _AxingResolverPrivate {
-    gpointer reserved;
-};
-
 static void      axing_resolver_init          (AxingResolver       *resolver);
 static void      axing_resolver_class_init    (AxingResolverClass  *klass);
 
-G_DEFINE_TYPE (AxingResolver, axing_resolver, G_TYPE_OBJECT);
+G_DEFINE_ABSTRACT_TYPE (AxingResolver, axing_resolver, G_TYPE_OBJECT)
 
 static void
 axing_resolver_init (AxingResolver *resolver)
 {
-    resolver->priv = G_TYPE_INSTANCE_GET_PRIVATE (resolver, AXING_TYPE_RESOLVER,
-                                                  AxingResolverPrivate);
 }
 
 static void
 axing_resolver_class_init (AxingResolverClass *klass)
 {
-    g_type_class_add_private (klass, sizeof (AxingResolverPrivate));
 }
 
-static AxingResolver *default_resolver;
-
+/**
+ * axing_resolver_get_default:
+ *
+ * Retrieves the default #AxingResolver.
+ *
+ * Returns: (transfer full): the default #AxingResolver
+ */
 AxingResolver *
 axing_resolver_get_default (void)
 {
-    if (!default_resolver)
-        default_resolver = axing_simple_resolver_new ();
+    static AxingResolver *default_resolver;
+
+    if (g_once_init_enter (&default_resolver)) {
+        AxingResolver *resolver = axing_simple_resolver_new ();
+
+        g_once_init_leave (&default_resolver, resolver);
+    }
 
     return g_object_ref (default_resolver);
 }

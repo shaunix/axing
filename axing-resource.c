@@ -23,16 +23,15 @@
 #include "axing-resource.h"
 #include "axing-private.h"
 
-struct _AxingResourcePrivate {
+typedef struct {
     GFile *file;
     GInputStream *input;
     GSimpleAsyncResult *result;
-};
+} AxingResourcePrivate;
 
 static void      axing_resource_init          (AxingResource       *resource);
 static void      axing_resource_class_init    (AxingResourceClass  *klass);
 static void      axing_resource_dispose       (GObject           *object);
-static void      axing_resource_finalize      (GObject           *object);
 static void      axing_resource_get_property  (GObject           *object,
                                                guint              prop_id,
                                                GValue            *value,
@@ -49,21 +48,17 @@ enum {
     N_PROPS
 };
 
-G_DEFINE_TYPE (AxingResource, axing_resource, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE (AxingResource, axing_resource, G_TYPE_OBJECT)
 
 static void
 axing_resource_init (AxingResource *resource)
 {
-    resource->priv = G_TYPE_INSTANCE_GET_PRIVATE (resource, AXING_TYPE_RESOURCE,
-                                                  AxingResourcePrivate);
 }
 
 static void
 axing_resource_class_init (AxingResourceClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
-
-    g_type_class_add_private (klass, sizeof (AxingResourcePrivate));
 
     object_class->get_property = axing_resource_get_property;
     object_class->set_property = axing_resource_set_property;
@@ -90,18 +85,12 @@ static void
 axing_resource_dispose (GObject *object)
 {
     AxingResource *resource = AXING_RESOURCE (object);
-    if (resource->priv->file) {
-        g_object_unref (resource->priv->file);
-        resource->priv->file = NULL;
-    }
-    if (resource->priv->input) {
-        g_object_unref (resource->priv->input);
-        resource->priv->input = NULL;
-    }
-    if (resource->priv->result) {
-        g_object_unref (resource->priv->result);
-        resource->priv->result = NULL;
-    }
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
+    g_clear_object (&priv->file);
+    g_clear_object (&priv->input);
+    g_clear_object (&priv->result);
+
     G_OBJECT_CLASS (axing_resource_parent_class)->dispose (object);
 }
 
@@ -112,12 +101,14 @@ axing_resource_get_property (GObject    *object,
                              GParamSpec *pspec)
 {
     AxingResource *resource = AXING_RESOURCE (object);
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
     switch (prop_id) {
     case PROP_FILE:
-        g_value_set_object (value, resource->priv->file);
+        g_value_set_object (value, priv->file);
         break;
     case PROP_STREAM:
-        g_value_set_object (value, resource->priv->input);
+        g_value_set_object (value, priv->input);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -131,16 +122,14 @@ axing_resource_set_property (GObject      *object,
                            GParamSpec   *pspec)
 {
     AxingResource *resource = AXING_RESOURCE (object);
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
     switch (prop_id) {
     case PROP_FILE:
-        if (resource->priv->file)
-            g_object_unref (resource->priv->file);
-        resource->priv->file = G_FILE (g_value_dup_object (value));
+        priv->file = G_FILE (g_value_dup_object (value));
         break;
     case PROP_STREAM:
-        if (resource->priv->input)
-            g_object_unref (resource->priv->input);
-        resource->priv->input = G_INPUT_STREAM (g_value_dup_object (value));
+        priv->input = G_INPUT_STREAM (g_value_dup_object (value));
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -151,7 +140,9 @@ AxingResource *
 axing_resource_new (GFile        *file,
                     GInputStream *stream)
 {
-    g_return_val_if_fail (file != NULL || stream != NULL, NULL);
+    g_return_val_if_fail (file == NULL || G_IS_FILE (file), NULL);
+    g_return_val_if_fail (stream == NULL || G_IS_INPUT_STREAM (stream), NULL);
+
     return g_object_new (AXING_TYPE_RESOURCE,
                          "file", file,
                          "input-stream", stream,
@@ -161,13 +152,21 @@ axing_resource_new (GFile        *file,
 GFile *
 axing_resource_get_file (AxingResource *resource)
 {
-    return resource->priv->file;
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
+    g_return_val_if_fail (AXING_IS_RESOURCE (resource), NULL);
+
+    return priv->file;
 }
 
 GInputStream *
 axing_resource_get_input_stream (AxingResource *resource)
 {
-    return resource->priv->input;
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
+    g_return_val_if_fail (AXING_IS_RESOURCE (resource), NULL);
+
+    return priv->input;
 }
 
 GInputStream *
@@ -175,11 +174,15 @@ axing_resource_read (AxingResource  *resource,
                      GCancellable   *cancellable,
                      GError        **error)
 {
-    if (resource->priv->input) {
-        return resource->priv->input;
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
+    g_return_val_if_fail (AXING_IS_RESOURCE (resource), NULL);
+
+    if (priv->input) {
+        return priv->input;
     }
     else {
-        return (GInputStream *) g_file_read (resource->priv->file,
+        return (GInputStream *) g_file_read (priv->file,
                                              cancellable,
                                              error);
     }
@@ -190,16 +193,17 @@ resource_file_read_cb (GFile         *file,
                        GAsyncResult  *result,
                        AxingResource *resource)
 {
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
     GError *error = NULL;
 
-    resource->priv->input = G_INPUT_STREAM (g_file_read_finish (file, result, &error));
+    priv->input = G_INPUT_STREAM (g_file_read_finish (file, result, &error));
 
     if (error) {
-        g_simple_async_result_set_from_error (resource->priv->result, error);
+        g_simple_async_result_set_from_error (priv->result, error);
         g_error_free (error);
     }
 
-    g_simple_async_result_complete (resource->priv->result);
+    g_simple_async_result_complete (priv->result);
 }
 
 void
@@ -208,14 +212,20 @@ axing_resource_read_async (AxingResource       *resource,
                            GAsyncReadyCallback  callback,
                            gpointer             user_data)
 {
-    resource->priv->result = g_simple_async_result_new (G_OBJECT (resource),
-                                                        callback, user_data,
-                                                        axing_resource_read_async);
-    if (resource->priv->input) {
-        g_simple_async_result_complete_in_idle (resource->priv->result);
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
+
+    g_return_if_fail (AXING_IS_RESOURCE (resource));
+    g_return_if_fail (cancellable == NULL || G_IS_CANCELLABLE (cancellable));
+    g_return_if_fail (callback != NULL);
+
+    priv->result = g_simple_async_result_new (G_OBJECT (resource),
+                                              callback, user_data,
+                                              axing_resource_read_async);
+    if (priv->input) {
+        g_simple_async_result_complete_in_idle (priv->result);
     }
     else {
-        g_file_read_async (resource->priv->file,
+        g_file_read_async (priv->file,
                            G_PRIORITY_DEFAULT,
                            cancellable,
                            (GAsyncReadyCallback) resource_file_read_cb,
@@ -228,10 +238,15 @@ axing_resource_read_finish (AxingResource *resource,
                             GAsyncResult  *res,
                             GError       **error)
 {
-    g_simple_async_result_propagate_error (resource->priv->result, error);
+    AxingResourcePrivate *priv = axing_resource_get_instance_private (resource);
 
-    if (resource->priv->input)
-        return g_object_ref (resource->priv->input);
+    g_return_val_if_fail (AXING_IS_RESOURCE (resource), NULL);
+    g_return_val_if_fail (G_IS_ASYNC_RESULT (res), NULL);
+
+    g_simple_async_result_propagate_error (priv->result, error);
+
+    if (priv->input)
+        return g_object_ref (priv->input);
     else
         return NULL;
 }

@@ -31,25 +31,10 @@
 
 G_BEGIN_DECLS
 
-#define AXING_TYPE_XML_PARSER            (axing_xml_parser_get_type ())
-#define AXING_XML_PARSER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), AXING_TYPE_XML_PARSER, AxingXmlParser))
-#define AXING_XML_PARSER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), AXING_TYPE_XML_PARSER, AxingXmlParserClass))
-#define AXING_IS_XML_PARSER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AXING_TYPE_XML_PARSER))
-#define AXING_IS_XML_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), AXING_TYPE_XML_PARSER))
-#define AXING_XML_PARSER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), AXING_TYPE_XML_PARSER, AxingXmlParserClass))
+#define AXING_TYPE_XML_PARSER   (axing_xml_parser_get_type ())
+#define AXING_XML_PARSER_ERROR  (axing_xml_parser_error_quark ())
 
-#define AXING_XML_PARSER_ERROR axing_xml_parser_error_quark()
-
-typedef struct _AxingXmlParser        AxingXmlParser;
-typedef struct _AxingXmlParserPrivate AxingXmlParserPrivate;
-typedef struct _AxingXmlParserClass   AxingXmlParserClass;
-
-struct _AxingXmlParser {
-    AxingStream parent;
-
-    /*< private >*/
-    AxingXmlParserPrivate *priv;
-};
+G_DECLARE_DERIVABLE_TYPE (AxingXmlParser, axing_xml_parser, AXING, XML_PARSER, AxingStream)
 
 struct _AxingXmlParserClass {
     AxingStreamClass parent_class;
@@ -78,7 +63,6 @@ typedef enum {
     AXING_XML_PARSER_ERROR_OTHER
 } AxingXmlParserError;
 
-GType             axing_xml_parser_get_type        (void);
 GQuark            axing_xml_parser_error_quark     (void);
 
 AxingXmlParser *  axing_xml_parser_new             (AxingResource        *resource,

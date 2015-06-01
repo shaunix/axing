@@ -22,7 +22,7 @@
 
 #include "axing-namespace-map.h"
 
-G_DEFINE_INTERFACE (AxingNamespaceMap, axing_namespace_map, G_TYPE_OBJECT);
+G_DEFINE_INTERFACE (AxingNamespaceMap, axing_namespace_map, G_TYPE_OBJECT)
 
 static void
 axing_namespace_map_default_init (AxingNamespaceMapInterface *iface)
