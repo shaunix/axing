@@ -304,6 +304,7 @@ static char *    resource_get_basename          (AxingResource        *resource)
 static ParserContext * context_new              (AxingXmlParser       *parser);
 static void            context_free             (ParserContext        *context);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (ParserContext, context_free)
 
 enum {
     PROP_0,
@@ -2055,7 +2056,7 @@ context_parse_doctype_element (ParserContext *context, char **line) {
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_AFTER) {
-        char *value;
+        g_autofree char *value;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '\0')
             return;
@@ -2067,7 +2068,6 @@ context_parse_doctype_element (ParserContext *context, char **line) {
                                       context->cur_qname,
                                       value,
                                       &priv->error);
-        g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         (*line)++; context->colnum++;
@@ -2149,7 +2149,7 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_AFTER) {
-        char *value;
+        g_autofree char *value;
         EAT_SPACES (*line, *line, -1, context);
         if ((*line)[0] == '\0')
             return;
@@ -2161,7 +2161,6 @@ context_parse_doctype_attlist (ParserContext *context, char **line) {
                                       context->cur_qname,
                                       value,
                                       &priv->error);
-        g_free (value);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         (*line)++; context->colnum++;
@@ -2565,8 +2564,8 @@ context_parse_parameter (ParserContext  *context,
 {
     AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     const char *beg = *line + 1;
-    char *entname = NULL;
-    char *value = NULL;
+    g_autofree char *entname;
+    g_autofree char *value;
     int colnum = context->colnum;
     g_assert ((*line)[0] == '%');
 
@@ -2600,7 +2599,7 @@ context_parse_parameter (ParserContext  *context,
 
     value = axing_dtd_schema_get_parameter (priv->doctype, entname);
     if (value) {
-        ParserContext *entctxt = context_new (context->parser);
+        g_autoptr(ParserContext) entctxt = context_new (context->parser);
         /* not duping these two, NULL them before free below */
         entctxt->basename = context->basename;
         entctxt->entname = entname;
@@ -2625,8 +2624,6 @@ context_parse_parameter (ParserContext  *context,
         entctxt->cur_text = NULL;
         entctxt->basename = NULL;
         entctxt->entname = NULL;
-        context_free (entctxt);
-        g_free (value);
     }
     else {
         ERROR_FIXME(context);
@@ -2634,7 +2631,6 @@ context_parse_parameter (ParserContext  *context,
 
  error:
     context->colnum = colnum;
-    g_free (entname);
 }
 
 static void
@@ -3039,7 +3035,7 @@ static void
 context_parse_entity (ParserContext *context, char **line)
 {
     const char *beg = *line + 1;
-    char *entname = NULL;
+    g_autofree char *entname;
     char builtin = '\0';
     int colnum = context->colnum;
     g_assert ((*line)[0] == '&');
@@ -3139,7 +3135,6 @@ context_parse_entity (ParserContext *context, char **line)
     }
  error:
     context->colnum = colnum;
-    g_free (entname);
 }
 
 static void
@@ -3147,7 +3142,10 @@ context_process_entity (ParserContext *context, const char *entname, char **line
 {
     AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
     ParserContext *parent;
-    char *value=NULL, *system=NULL, *public=NULL, *ndata=NULL;
+    g_autofree char *value;
+    g_autofree char *system;
+    g_autofree char *public;
+    g_autofree char *ndata;
 
     for (parent = context->parent; parent != NULL; parent = parent->parent) {
         if (parent->entname && g_str_equal (entname, parent->entname)) {
@@ -3158,7 +3156,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
     if (axing_dtd_schema_get_entity_full (priv->doctype, entname,
                                           &value, &public, &system, &ndata)) {
         if (value) {
-            ParserContext *entctxt = context_new (context->parser);
+            g_autoptr(ParserContext) entctxt = context_new (context->parser);
             /* not duping these two, NULL them before free below */
             entctxt->parent = context;
             entctxt->basename = context->basename;
@@ -3180,13 +3178,12 @@ context_process_entity (ParserContext *context, const char *entname, char **line
             entctxt->cur_text = NULL;
             entctxt->basename = NULL;
             entctxt->entname = NULL;
-            context_free (entctxt);
         }
         else if (ndata) {
             ERROR_FIXME(context);
         }
         else {
-            AxingResolver *resolver;
+            g_autoptr(AxingResolver) resolver;
 
             if (context->state == PARSER_STATE_STELM_ATTVAL) {
                 ERROR_ENTITY(context);
@@ -3198,8 +3195,7 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 resolver = axing_resolver_get_default ();
 
             if (priv->async) {
-                ParserContext *entctxt;
-                entctxt = context_new (context->parser);
+                g_autoptr(ParserContext) entctxt = context_new (context->parser);
                 entctxt->parent = context;
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = PARSER_STATE_TEXTDECL;
@@ -3218,20 +3214,18 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                     (*line)++;
             }
             else {
-                ParserContext *entctxt;
-                AxingResource *resource;
+                g_autoptr(ParserContext) entctxt;
+                g_autoptr(AxingResource) resource;
                 resource = axing_resolver_resolve (resolver, context->resource,
                                                    NULL, system, public, "xml:entity",
                                                    priv->cancellable,
                                                    &priv->error);
-                if (priv->error) {
-                    g_object_unref (resolver);
+                if (priv->error)
                     goto error;
-                }
 
                 entctxt = context_new (context->parser);
                 entctxt->parent = context;
-                entctxt->resource = resource;
+                entctxt->resource = g_object_ref (resource);
                 entctxt->basename = resource_get_basename (resource);
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = PARSER_STATE_TEXTDECL;
@@ -3246,16 +3240,12 @@ context_process_entity (ParserContext *context, const char *entname, char **line
                 context->state = entctxt->state;
                 context->cur_text = entctxt->cur_text;
                 entctxt->cur_text = NULL;
-                context_free (entctxt);
-                g_object_unref (resolver);
             }
         }
     }
+
  error:
-    g_free (value);
-    g_free (public);
-    g_free (system);
-    g_free (ndata);
+    return;
 }
 
 static void
@@ -3264,7 +3254,7 @@ context_process_entity_resolved (AxingResolver *resolver,
                                  ParserContext *context)
 {
     AxingXmlParserPrivate *priv = axing_xml_parser_get_instance_private (context->parser);
-    AxingResource *resource;
+    g_autoptr(AxingResource) resource;
 
     resource = axing_resolver_resolve_finish (resolver, result, &priv->error);
     if (priv->error)
@@ -3278,7 +3268,7 @@ context_process_entity_resolved (AxingResolver *resolver,
                                (GAsyncReadyCallback) context_resource_read_cb,
                                context);
  error:
-    g_object_unref (resolver);
+    return;
 }
 
 static void
