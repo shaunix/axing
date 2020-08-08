@@ -1,0 +1,1 @@
+error: doctype36.xml:2:22: Syntax error: Expected valid attribute value production character.

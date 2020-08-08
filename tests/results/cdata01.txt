@@ -1,0 +1,6 @@
+[ doc |doc () {}doc 1:1
+  # %0Afoo%0A
+  * %0A%3Cfoo%3E%0A
+  # %0Abar%0A
+] doc |doc () {}doc 7:1
+finish

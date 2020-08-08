@@ -1,0 +1,1 @@
+error: xmlns10.xml:1:1: Could not parse qname "doc:".

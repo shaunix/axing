@@ -1,0 +1,1 @@
+error: doctype25.xml:2:18: Syntax error: Expected SYSTEM or PUBLIC.

@@ -1,0 +1,22 @@
+[ doc |doc () {}doc 2:1
+  # %0A
+  [ lf |lf () {}lf 3:1
+  ] lf |lf () {}lf 4:2
+  # %0A
+  [ cr |cr () {}cr 5:1
+  ] cr |cr () {}cr 6:2
+  # %0A
+  [ crlf |crlf () {}crlf 7:1
+  ] crlf |crlf () {}crlf 8:2
+  # %0A
+  [ nel |nel () {}nel 9:1
+  ] nel |nel () {}nel 10:2
+  # %0A
+  [ crnel |crnel () {}crnel 11:1
+  ] crnel |crnel () {}crnel 12:2
+  # %0A
+  [ sep |sep () {}sep 13:1
+  ] sep |sep () {}sep 14:2
+  # %0A
+] doc |doc () {}doc 15:1
+finish

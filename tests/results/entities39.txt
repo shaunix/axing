@@ -1,0 +1,2 @@
+[ wrong |wrong () {}wrong 1:1
+error: entities39.xml:1:8: Entity error: Replacement text contains invalid character.

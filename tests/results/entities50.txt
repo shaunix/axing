@@ -1,0 +1,1 @@
+error: entities50.xml:3:1: Syntax error: Expected closing angle bracket.

@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A
-  [ foo |foo ()
-error: entities13.xml(&foo;):1:6:Missing end tag for "foo".
+  [ foo |foo () {}foo 1:1
+error: entities13.xml(&foo;):1:6: Missing end tag for "foo".

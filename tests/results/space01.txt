@@ -1,4 +1,4 @@
-[ space |space ()
-  @ after |after () element
-] space |space ()
+[ space |space () {}space 1:1
+  @ after |after () {}after 1:8 "element"
+] space |space () {}space 1:1
 finish

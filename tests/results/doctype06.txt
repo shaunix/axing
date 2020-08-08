@@ -1,1 +1,1 @@
-error: doctype06.xml:4:1:Syntax error.
+error: doctype06.xml:4:1: Syntax error: Expected closing angle bracket.

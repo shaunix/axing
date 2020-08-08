@@ -1,6 +1,6 @@
-[ doc |doc ()
+[ doc |doc () {}doc 6:1
   # %0A
-  [ one |one ()
-    [ two |two ()
-      [ three |three ()
-error: entities27-3.inc:1:8:Incorrect entity reference.
+  [ one |one () {}one 1:1
+    [ two |two () {}two 1:1
+      [ three |three () {}three 1:1
+error: entities27-3.inc:1:8: Entity error: Entity reference loop.

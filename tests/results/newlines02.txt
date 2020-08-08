@@ -1,32 +1,32 @@
-[ doc |doc ()
+[ doc |doc () {}doc 2:1
   # %0A
-  [ lf |lf ()
+  [ lf |lf () {}lf 3:1
     # %0A
-  ] lf |lf ()
+  ] lf |lf () {}lf 4:1
   # %0A
-  [ cr |cr ()
+  [ cr |cr () {}cr 5:1
     # %0A
-  ] cr |cr ()
+  ] cr |cr () {}cr 6:1
   # %0A
-  [ crlf |crlf ()
+  [ crlf |crlf () {}crlf 7:1
     # %0A
-  ] crlf |crlf ()
+  ] crlf |crlf () {}crlf 8:1
   # %0A
-  [ nel |nel ()
+  [ nel |nel () {}nel 9:1
     # %0A
-  ] nel |nel ()
+  ] nel |nel () {}nel 10:1
   # %0A
-  [ crnel |crnel ()
+  [ crnel |crnel () {}crnel 11:1
     # %0A
-  ] crnel |crnel ()
+  ] crnel |crnel () {}crnel 12:1
   # %0A
-  [ sep |sep ()
+  [ sep |sep () {}sep 13:1
     # %0A
-  ] sep |sep ()
+  ] sep |sep () {}sep 14:1
   # %0A
-  [ literal |literal ()
+  [ literal |literal () {}literal 15:1
     # %0A%0D%0D%0A%C2%85%0D%C2%85%E2%80%A8
-  ] literal |literal ()
+  ] literal |literal () {}literal 15:55
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 16:1
 finish

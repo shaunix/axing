@@ -1,1 +1,1 @@
-error: pi02.xml:1:3:Syntax error.
+error: pi02.xml:1:3: Syntax error: Expected name start character.

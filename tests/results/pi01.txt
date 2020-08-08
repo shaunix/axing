@@ -1,7 +1,7 @@
 ? pi1 
-[ doc |doc ()
+[ doc |doc () {}doc 2:1
   # %0A
   ? pi2 some%20value%20%0A%20
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 5:1
 finish

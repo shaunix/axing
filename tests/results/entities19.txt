@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: entities19.xml(&foo;):1:5:Syntax error.
+[ doc |doc () {}doc 4:1
+error: entities19.xml(&foo;):1:5: Syntax error: Incomplete data at end of parser context.

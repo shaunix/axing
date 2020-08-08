@@ -1,0 +1,5 @@
+<!DOCTYPE doc SYSTEM "http://example.com/doc" [
+<!ATTLIST! doc version CDATA #REQUIRED>
+]
+>
+<doc/>

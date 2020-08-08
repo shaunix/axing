@@ -1,12 +1,12 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # a
-  [ foo |foo ()
+  [ foo |foo () {}foo 1:2
     # b
-  ] foo |foo ()
+  ] foo |foo () {}foo 1:8
   # c
-  [ foo |foo ()
+  [ foo |foo () {}foo 1:15
     # d
-  ] foo |foo ()
+  ] foo |foo () {}foo 1:21
   # e
-] doc |doc ()
+] doc |doc () {}doc 4:11
 finish

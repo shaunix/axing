@@ -1,5 +1,5 @@
-[ doc |doc ()
-  @ foo |foo () bar
-  @ bar |bar () baz
-] doc |doc ()
+[ doc |doc () {}doc 1:1
+  @ foo |foo () {}foo 1:6 "bar"
+  @ bar |bar () {}bar 1:16 "baz"
+] doc |doc () {}doc 1:1
 finish

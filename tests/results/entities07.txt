@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: entities07.xml:1:15:Incorrect entity reference.
+[ doc |doc () {}doc 1:1
+error: entities07.xml:1:18: Entity error: Expected name character or semicolon.

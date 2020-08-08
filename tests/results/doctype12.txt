@@ -1,1 +1,1 @@
-error: doctype12.xml:2:41:Syntax error.
+error: doctype12.xml:2:41: Syntax error: Expected space or closing angle bracket.

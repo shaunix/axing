@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 7:1
   # foobar
-] doc |doc ()
+] doc |doc () {}doc 7:12
 finish

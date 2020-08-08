@@ -1,0 +1,1 @@
+error: entities43.xml:2:19: Syntax error: Expected PUBLIC, SYSTEM, or quote character.

@@ -1,5 +1,5 @@
-[ doc |doc ()
-  [ a |a ()
-  ] a |a ()
-] doc |doc ()
+[ doc |doc () {}doc 1:2
+  [ a |a () {}a 1:8
+  ] a |a () {}a 1:8
+] doc |doc () {}doc 2:3
 finish

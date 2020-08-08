@@ -1,0 +1,4 @@
+<!DOCTYPE doc SYSTEM "systemid" [
+<!ATTLIST doc attr (a!b) "a">
+]>
+<doc/>

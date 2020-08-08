@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!NOTATION one! PUBLIC "some public id">
+]>
+<doc/>

@@ -1,4 +1,4 @@
-[ doc |doc ()
-  @ attr |attr () baaar
-] doc |doc ()
+[ doc |doc () {}doc 4:1
+  @ attr |attr () {}attr 4:6 "baaar"
+] doc |doc () {}doc 4:1
 finish

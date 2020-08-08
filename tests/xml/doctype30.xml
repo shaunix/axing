@@ -1,0 +1,4 @@
+<!DOCTYPE doc [
+<!NOTATION pub PUBLIC "some public id" "some system id"!>
+]>
+<doc/>

@@ -1,0 +1,1 @@
+error: entities46.xml:2:34: Syntax error: Expected pubid character or quote character.

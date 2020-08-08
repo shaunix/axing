@@ -1,1 +1,1 @@
-error: parameters04.xml(%p1;):4:1:Syntax error.
+error: parameters04.xml(%p1;):4:1: Syntax error: Incomplete data at end of parser context.

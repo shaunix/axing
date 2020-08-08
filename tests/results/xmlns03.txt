@@ -1,4 +1,4 @@
-[ doc |doc ()
-  @ foo:bar foo|bar (http://example.com/) baz
-] doc |doc ()
+[ doc |doc () {}doc 1:1
+  @ foo:bar foo|bar (http://example.com/) {http://example.com/}bar 1:38 "baz"
+] doc |doc () {}doc 1:52
 finish

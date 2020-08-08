@@ -1,7 +1,7 @@
-[ doc |doc ()
-  @ foo |foo () bar
-  [ a |a ()
-    @ foo |foo () baz
-  ] a |a ()
-] doc |doc ()
+[ doc |doc () {}doc 1:1
+  @ foo |foo () {}foo 1:6 "bar"
+  [ a |a () {}a 1:16
+    @ foo |foo () {}foo 1:19 "baz"
+  ] a |a () {}a 1:16
+] doc |doc () {}doc 1:30
 finish

@@ -1,0 +1,1 @@
+error: doctype24.xml:2:15: Syntax error: Expected space.

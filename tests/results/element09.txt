@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: element09.xml:1:14:Syntax error.
+[ doc |doc () {}doc 1:1
+error: element09.xml:1:14: Syntax error: Expected space or equals sign.

@@ -1,0 +1,1 @@
+error: doctype23.xml:2:11: Syntax error: Expected space.

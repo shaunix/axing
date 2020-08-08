@@ -1,0 +1,1 @@
+error: doctype30.xml:2:56: Syntax error: Expected closing angle bracket.

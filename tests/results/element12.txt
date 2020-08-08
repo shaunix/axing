@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A%20%20%E2%88%B4%0A
-] doc |doc ()
+] doc |doc () {}doc 3:1
 finish

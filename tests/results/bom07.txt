@@ -1,1 +1,1 @@
-error: bom07.xml:1:39:Detected encoding "UTF-16BE" from BOM, but got "UTF-8" from declaration.
+error: bom07.xml:1:39: Detected encoding "UTF-16BE" from BOM, but got "UTF-8" from declaration.

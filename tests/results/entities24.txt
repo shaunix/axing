@@ -1,12 +1,12 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0Atext%20
-  [ b |b ()
+  [ b |b () {}b 1:6
     # with
-  ] b |b ()
+  ] b |b () {}b 1:13
   # %20
-  [ i |i ()
+  [ i |i () {}i 1:18
     # markup
-  ] i |i ()
+  ] i |i () {}i 1:27
   # %0A%0A
-] doc |doc ()
+] doc |doc () {}doc 6:1
 finish

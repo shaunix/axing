@@ -1,0 +1,4 @@
+<!DOCTYPE doc SYSTEM "systemid" [
+<!ELEMENT doc (!)>
+]>
+<doc/>

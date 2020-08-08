@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A
-  [ foo |foo ()
-error: entities14.xml(&foo;):1:1:Extra content at end of resource.
+  [ foo |foo () {}foo 5:1
+error: entities14.xml(&foo;):1:1: Extra content at end of resource.

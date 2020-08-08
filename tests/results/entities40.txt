@@ -1,0 +1,1 @@
+error: entities40.xml:2:9: Syntax error: Expected space.

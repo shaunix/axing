@@ -1,0 +1,1 @@
+error: doctype34.xml:2:1: Syntax error: Expected declaration, comment, or processing instruction.

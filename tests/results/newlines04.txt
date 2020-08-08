@@ -1,3 +1,4 @@
-[ nel |nel ()
+[ nel |nel () {}nel 2:1
   # %0A
-error: newlines04.xml:3:2:Syntax error.
+] nel |nel () {}nel 3:1
+finish

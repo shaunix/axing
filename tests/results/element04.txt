@@ -1,5 +1,5 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A
-  [ a |a ()
+  [ a |a () {}a 2:1
     # %0A
-error: element04.xml:3:1:Incorrect end tag "doc".
+error: element04.xml:3:1: Incorrect end tag "doc".

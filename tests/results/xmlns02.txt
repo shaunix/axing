@@ -1,10 +1,10 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A%20%20
-  [ foo:a foo|a (http://example.com/)
-  ] foo:a foo|a (http://example.com/)
+  [ foo:a foo|a (http://example.com/) {http://example.com/}a 2:3
+  ] foo:a foo|a (http://example.com/) {http://example.com/}a 2:3
   # %0A%20%20
-  [ b |b ()
-  ] b |b ()
+  [ b |b () {}b 3:3
+  ] b |b () {}b 3:3
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 4:1
 finish

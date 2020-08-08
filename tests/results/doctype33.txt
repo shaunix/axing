@@ -1,0 +1,1 @@
+error: doctype33.xml:1:33: Syntax error: Expected internal subset or closing angle bracket.

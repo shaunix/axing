@@ -1,7 +1,7 @@
-[ doc |doc ()
+[ doc |doc () {}doc 5:1
   # %0A%0A
-  [ foo |foo ()
-  ] foo |foo ()
+  [ foo |foo () {}foo 2:1
+  ] foo |foo () {}foo 2:1
   # %0A%0A
-] doc |doc ()
+] doc |doc () {}doc 7:1
 finish

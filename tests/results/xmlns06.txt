@@ -1,3 +1,3 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A
-error: xmlns06.xml:2:4:Invalid namespace for prefix "xml".
+error: xmlns06.xml:2:4: Invalid namespace for prefix "xml".

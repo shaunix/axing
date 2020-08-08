@@ -1,1 +1,1 @@
-error: doctype11.xml:2:2:Syntax error.
+error: doctype11.xml:2:2: Syntax error: Expected space.

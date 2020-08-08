@@ -1,10 +1,10 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A%0A
-  [ foo |foo ()
-  ] foo |foo ()
+  [ foo |foo () {}foo 2:1
+  ] foo |foo () {}foo 2:1
   # %0A
-  [ bar |bar ()
-  ] bar |bar ()
+  [ bar |bar () {}bar 3:1
+  ] bar |bar () {}bar 3:1
   # %0A%0A
-] doc |doc ()
+] doc |doc () {}doc 6:1
 finish

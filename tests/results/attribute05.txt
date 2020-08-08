@@ -1,0 +1,1 @@
+error: attribute05.xml:1:14: Syntax error: Expected space or closing angle bracket.

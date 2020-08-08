@@ -1,0 +1,1 @@
+error: xmlns16.xml:1:6: Could not find namespace for prefix "ns".

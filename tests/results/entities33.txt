@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: entities33-1.inc:1:38:Syntax error.
+[ doc |doc () {}doc 4:1
+error: entities33-1.inc:1:38: Syntax error: Expected end of text declaration.

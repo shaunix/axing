@@ -1,1 +1,1 @@
-error: newlines03.xml:1:6:Syntax error.
+error: newlines03.xml:1:6: Syntax error: Expected space or question mark.

@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: entities08.xml:1:15:Incorrect entity reference.
+[ doc |doc () {}doc 1:1
+error: entities08.xml:1:16: Entity error: Expected name start character.

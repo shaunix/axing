@@ -1,5 +1,5 @@
-[ doc |doc ()
-  @ xml:lang xml|lang (http://www.w3.org/XML/1998/namespace) en
+[ doc |doc () {}doc 1:1
+  @ xml:lang xml|lang (http://www.w3.org/XML/1998/namespace) {http://www.w3.org/XML/1998/namespace}lang 1:6 "en"
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 2:1
 finish

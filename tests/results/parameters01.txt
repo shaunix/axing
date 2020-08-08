@@ -1,8 +1,8 @@
-[ doc |doc ()
+[ doc |doc () {}doc 5:1
   # %0A
-  [ el |el ()
-    @ attr |attr () bar
-  ] el |el ()
+  [ el |el () {}el 6:1
+    @ attr |attr () {}attr 6:5 "bar"
+  ] el |el () {}el 6:1
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 7:1
 finish

@@ -1,0 +1,1 @@
+error: entities47.xml:2:23: Syntax error: Expected quote character.

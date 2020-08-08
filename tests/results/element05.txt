@@ -1,6 +1,6 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A
-  [ a |a ()
+  [ a |a () {}a 2:1
     # %0A%0A
-  ] a |a ()
-error: element05.xml:5:1:Missing end tag for "doc".
+  ] a |a () {}a 4:1
+error: element05.xml:5:1: Missing end tag for "doc".

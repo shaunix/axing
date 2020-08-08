@@ -1,0 +1,1 @@
+error: doctype18.xml:1:15: Syntax error: Expected space or closing angle bracket.

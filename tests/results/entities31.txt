@@ -1,8 +1,8 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A%0Asome%20
-  [ i |i ()
+  [ i |i () {}i 2:6
     # mixed
-  ] i |i ()
+  ] i |i () {}i 2:14
   # %20content%0A%0A
-] doc |doc ()
+] doc |doc () {}doc 6:1
 finish

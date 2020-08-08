@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0Afoo%0Abar%0A
-] doc |doc ()
+] doc |doc () {}doc 4:1
 finish

@@ -1,2 +1,2 @@
-[ doc |doc ()
-error: element08.xml:1:11:Syntax error.
+[ doc |doc () {}doc 1:1
+error: element08.xml:1:11: Syntax error: Expected space or closing angle bracket.

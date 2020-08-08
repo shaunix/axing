@@ -1,3 +1,4 @@
-[ crnel |crnel ()
+[ crnel |crnel () {}crnel 2:1
   # %0A
-error: newlines05.xml:3:2:Syntax error.
+] crnel |crnel () {}crnel 3:1
+finish

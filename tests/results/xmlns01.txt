@@ -1,4 +1,4 @@
-[ doc |doc (http://example.com/)
+[ doc |doc (http://example.com/) {http://example.com/}doc 1:1
   # %0A
-] doc |doc (http://example.com/)
+] doc |doc (http://example.com/) {http://example.com/}doc 2:1
 finish

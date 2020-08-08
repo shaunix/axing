@@ -1,8 +1,8 @@
 ! %0Acomment%201%0A
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A
   ! %20comment%202%0A
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 7:1
 ! %0A%09comment%203%0A%09
 finish

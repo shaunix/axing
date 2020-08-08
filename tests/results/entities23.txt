@@ -1,10 +1,10 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %0A
-  [ two |two ()
-  ] two |two ()
+  [ two |two () {}two 1:1
+  ] two |two () {}two 1:1
   # %0A%0A
-  [ elements |elements ()
-  ] elements |elements ()
+  [ elements |elements () {}elements 3:1
+  ] elements |elements () {}elements 3:1
   # %0A%0A
-] doc |doc ()
+] doc |doc () {}doc 6:1
 finish

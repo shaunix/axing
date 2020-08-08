@@ -1,8 +1,8 @@
-[ doc |doc ()
+[ doc |doc () {}doc 8:1
   # %0A
-  [ one |one ()
-    [ two |two ()
-      [ three |three ()
-        [ four |four ()
-          [ five |five ()
-error: entities26.xml(&five;):1:7:Incorrect entity reference.
+  [ one |one () {}one 1:1
+    [ two |two () {}two 1:1
+      [ three |three () {}three 1:1
+        [ four |four () {}four 1:1
+          [ five |five () {}five 1:1
+error: entities26.xml(&five;):1:7: Entity error: Entity reference loop.

@@ -1,0 +1,1 @@
+error: parameters06.xml:2:11: Syntax error: Expected space.

@@ -1,0 +1,1 @@
+error: doctype32.xml:1:16: Syntax error: Expected PUBLIC, SYSTEM, internal subset, or closing angle bracket.

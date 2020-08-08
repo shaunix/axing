@@ -1,0 +1,7 @@
+<doc>
+foo
+<![CDATA[
+<foo>
+]]>
+bar
+</doc>

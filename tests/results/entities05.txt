@@ -1,8 +1,8 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A
-  [ a |a ()
-    @ href |href () %3C%26%3E%22%27
-  ] a |a ()
+  [ a |a () {}a 2:1
+    @ href |href () {}href 2:4 "%3C%26%3E%22%27"
+  ] a |a () {}a 2:1
   # %0A
-] doc |doc ()
+] doc |doc () {}doc 3:1
 finish

@@ -1,4 +1,4 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
   # %E2%88%B4
-] doc |doc ()
+] doc |doc () {}doc 4:17
 finish

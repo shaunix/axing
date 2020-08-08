@@ -1,0 +1,1 @@
+error: attribute04.xml:1:10: Syntax error: Expected quote character.

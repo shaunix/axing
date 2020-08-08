@@ -1,2 +1,2 @@
-[ doc |doc ()
+[ doc |doc () {}doc 4:1
 error: Error opening file: No such file or directory

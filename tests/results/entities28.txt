@@ -1,5 +1,5 @@
-[ doc |doc ()
-  [ nonewline |nonewline ()
-  ] nonewline |nonewline ()
-] doc |doc ()
+[ doc |doc () {}doc 4:1
+  [ nonewline |nonewline () {}nonewline 1:1
+  ] nonewline |nonewline () {}nonewline 1:1
+] doc |doc () {}doc 4:17
 finish

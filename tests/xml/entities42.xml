@@ -1,0 +1,6 @@
+<!DOCTYPE doc [
+<!ENTITY foo PUBLIC"-//someid">
+]>
+<doc>
+&foo;
+</doc>

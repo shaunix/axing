@@ -1,0 +1,7 @@
+<!DOCTYPE doc [
+<!ENTITY nine SYSTEM
+"some sysid"
+ NDATA äéıōù!>
+]
+>
+<doc/>

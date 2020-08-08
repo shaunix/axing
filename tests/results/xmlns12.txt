@@ -1,0 +1,1 @@
+error: xmlns12.xml:1:1: Could not find namespace for prefix "doc".

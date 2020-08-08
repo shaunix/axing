@@ -1,0 +1,1 @@
+error: doctype16.xml:1:38: Syntax error: Invalid character in public identifier.

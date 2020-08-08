@@ -1,9 +1,9 @@
-[ doc |doc ()
+[ doc |doc () {}doc 1:1
   # %0A
-  [ a |a ()
-    @ b |b () %E2%88%B4
+  [ a |a () {}a 2:1
+    @ b |b () {}b 2:4 "%E2%88%B4"
     # %E2%88%B4
-  ] a |a ()
+  ] a |a () {}a 2:24
   # %0A
-  [ wrong |wrong ()
-error: entities09.xml:3:8:Incorrect entity reference.
+  [ wrong |wrong () {}wrong 3:1
+error: entities09.xml:3:10: Entity error: Expected decimal digit.

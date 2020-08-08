@@ -1,0 +1,1 @@
+error: comment03.xml:3:1: Syntax error: Two hyphens not allowed in comment.

@@ -1,0 +1,1 @@
+error: doctype27.xml:2:25: Syntax error: Expected quote character.

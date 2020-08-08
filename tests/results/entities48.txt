@@ -1,0 +1,1 @@
+error: entities48.xml:2:22: Syntax error: Did not expect NDATA here.
