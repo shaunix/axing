@@ -1,0 +1,5 @@
+<!DOCTYPE doc [
+<!ENTITY foo '<foo/>'>
+]>
+</doc>
+

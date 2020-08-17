@@ -26,6 +26,7 @@
 #include "axing-resource.h"
 #include "axing-reader.h"
 #include "axing-xml-parser.h"
+#include "axing-utf8.h"
 
 #if 1
 #define AXING_DEBUG(args...) if (g_getenv("AXING_DEBUG")) g_print(args);
@@ -1106,34 +1107,20 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 #define XML_IS_NAME_CHAR(cp) (XML_IS_NAME_START_CHAR(cp) || cp == '-' || cp == '.' || (cp >= '0' && cp <= '9') || cp == 0xB7 || (cp >= 0x300 && cp <= 0x36F) || (cp >= 0x203F && cp <= 0x2040))
 
 #define CONTEXT_GET_NAME(context, namevar) {                            \
-        gsize bytes = 0;                                                \
-        if ((guchar)context->linecur[0] < 0x80) {                       \
-            if (!XML_IS_NAME_START_BYTE(context->linecur[0]))           \
-                ERROR_SYNTAX_MSG (context, "Expected name start character"); \
+    char *start = context->linecur;                                     \
+    gsize bytes = axing_utf8_bytes_name_start (context->linecur);       \
+    if (bytes == 0)                                                     \
+        ERROR_SYNTAX_MSG (context, "Expected name start character");    \
+    context->linecur += bytes;                                          \
+    context->colnum++;                                                  \
+    while (1) {                                                         \
+        bytes = axing_utf8_bytes_name (context->linecur);               \
+        if (bytes == 0)                                                 \
+            break;                                                      \
+        context->linecur += bytes;                                      \
+        context->colnum++;                                              \
         }                                                               \
-        else {                                                          \
-            gunichar cp = g_utf8_get_char (context->linecur);           \
-            if (!XML_IS_NAME_START_CHAR (cp))                           \
-                ERROR_SYNTAX_MSG (context, "Expected name start character"); \
-        }                                                               \
-        while (context->linecur[0]) {                                   \
-            if ((guchar)context->linecur[0] < 0x80) {                   \
-                if (!XML_IS_NAME_BYTE (context->linecur[0]))            \
-                    break;                                              \
-                bytes++; context->linecur++; context->colnum++;         \
-            }                                                           \
-            else {                                                      \
-                gunichar cp;                                            \
-                char *next;                                             \
-                cp = g_utf8_get_char (context->linecur);                \
-                if (!XML_IS_NAME_CHAR (cp))                             \
-                    break;                                              \
-                next = g_utf8_next_char (context->linecur);             \
-                bytes = bytes + next - context->linecur;                \
-                context->linecur = next; context->colnum += 1;          \
-            }                                                           \
-        }                                                               \
-        namevar = g_strndup (context->linecur - bytes, bytes);          \
+        namevar = g_strndup (start, context->linecur - start);          \
     }
 
 /* AXING_XML_PARSER_ERROR_SYNTAX
@@ -2543,8 +2530,8 @@ context_parse_doctype_notation (Context *context) {
     if (context->doctype_state == DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL) {
         char *cur = context->linecur;
         while (cur[0] != '\0') {
-            char c = cur[0];
-            if (c == context->quotechar) {
+            gsize bytes;
+            if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
                     g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
                 context->decl_public = g_string_free (context->cur_text, FALSE);
@@ -2555,13 +2542,11 @@ context_parse_doctype_notation (Context *context) {
                     ERROR_SYNTAX_MSG (context, "Expected space or closing angle bracket"); // test: doctype12
                 break;
             }
-            if (!(c == 0x20 || c == 0x0D || c == 0x0A ||
-                  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                  c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
-                  c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
+            bytes = axing_utf8_bytes_pubid (cur);
+            if (bytes == 0)
                 ERROR_SYNTAX_MSG (context, "Expected pubid character or quote character"); // test: doctype28
-            }
-            CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
+            context->colnum++;
+            cur += bytes;
         }
         if (context->cur_text && cur != context->linecur)
             g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
@@ -2715,8 +2700,8 @@ context_parse_doctype_entity (Context *context) {
     if (context->doctype_state == DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL) {
         char *cur = context->linecur;
         while (cur[0] != '\0') {
-            char c = cur[0];
-            if (c == context->quotechar) {
+            gsize bytes;
+            if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
                     g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
                 context->decl_public = g_string_free (context->cur_text, FALSE);
@@ -2728,13 +2713,11 @@ context_parse_doctype_entity (Context *context) {
                     ERROR_SYNTAX_MSG (context, "Expected space"); // test: entities45
                 break;
             }
-            if (!(c == 0x20 || c == 0x0D || c == 0x0A ||
-                  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                  c == '!' || c == '#' || c == '$' || c == '%' || (c >= '\'' && c <= '/') ||
-                  c == ':' || c == ';' || c == '=' || c == '?' || c == '@' || c == '_')) {
+            bytes = axing_utf8_bytes_pubid (cur);
+            if (bytes == 0)
                 ERROR_SYNTAX_MSG (context, "Expected pubid character or quote character"); // test: entities46
-            }
-            CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
+            context->colnum++;
+            cur += bytes;
         }
         if (context->cur_text && cur != context->linecur)
             g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-gcc -g3 -o text-axing-uri-resolver \
+gcc -g3 -o test-axing-uri-resolver \
     $(pkg-config --libs gio-2.0 --cflags gio-2.0) \
     axing-utils.c \
     test-axing-uri-resolver.c
