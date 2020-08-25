@@ -25,7 +25,8 @@
 
 #include <glib-object.h>
 #include <gio/gio.h>
-#include "axing-node-type.h"
+
+#include "axing-enums.h"
 
 G_BEGIN_DECLS
 

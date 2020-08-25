@@ -11,6 +11,7 @@ main (int argc, char **argv)
   GFile *file;
   AxingResource *resource;
   AxingXmlParser *parser;
+  AxingReader *reader;
   int i;
 
   setlocale(LC_ALL, "");
@@ -19,8 +20,9 @@ main (int argc, char **argv)
     file = g_file_new_for_path ("time.xml");
     resource = axing_resource_new (file, NULL);
     parser = axing_xml_parser_new (resource, NULL);
+    reader = AXING_READER (parser);
 
-    while (axing_reader_read (AXING_READER (parser), NULL)) { }
+    while (axing_reader_read (reader, NULL)) { }
 
     g_object_unref (resource);
     g_object_unref (file);

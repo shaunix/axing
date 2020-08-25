@@ -28,6 +28,11 @@
 G_BEGIN_DECLS
 
 typedef enum {
+    AXING_XML_VERSION_1_0,
+    AXING_XML_VERSION_1_1
+} AxingXmlVersion;
+
+typedef enum {
     AXING_NODE_TYPE_NONE,
     AXING_NODE_TYPE_ERROR,
     AXING_NODE_TYPE_DOCUMENT,

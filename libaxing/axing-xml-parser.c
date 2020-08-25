@@ -20,8 +20,8 @@
  * Author: Shaun McCance  <shaunm@gnome.org>
  */
 
+#include "axing-enums.h"
 #include "axing-dtd-schema.h"
-#include "axing-node-type.h"
 #include "axing-private.h"
 #include "axing-resource.h"
 #include "axing-reader.h"
@@ -118,8 +118,6 @@ typedef enum {
     DOCTYPE_STATE_NULL
 } DoctypeState;
 
-typedef enum { XML_1_0, XML_1_1 } XmlVersion;
-
 typedef enum {
     BOM_ENCODING_NONE,
     BOM_ENCODING_UCS4_BE,
@@ -207,7 +205,7 @@ struct _AxingXmlParser {
     GSimpleAsyncResult *result;
     GError             *error;
 
-    XmlVersion          xml_version;
+    AxingXmlVersion     xml_version;
 
     AxingDtdSchema      *doctype;
 
@@ -575,16 +573,6 @@ reader_read (AxingReader  *reader,
                 if (parser->context->parent != NULL) {
                     Context *parent = parser->context->parent;
                     AXING_DEBUG ("  POP CONTEXT\n");
-
-/* FIXME REFACTOR
-We had this in, but it caused errors, and I don't know why it was there.
-I don't think it makes any sense that popping a context should set the
-parent context state to the child context state.
-g_print(":: %i\n", parent->state);
-                    parent->state = parser->context->state;
-g_print(":: %i\n", parent->state);
-*/
-
                     parent->cur_text = parser->context->cur_text;
                     parser->context->cur_text = NULL;
                     context_free (parser->context);
@@ -1076,7 +1064,7 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 #endif /* REFACTOR */
 
 #define XML_IS_CHAR(cp, context)                                          \
-    ((context->parser->xml_version == XML_1_1) ?                          \
+    ((context->parser->xml_version == AXING_XML_VERSION_1_1) ?            \
      (cp == 0x09 || cp == 0x0A || cp == 0x0D || cp == 0x85 ||             \
       (cp >= 0x20 && cp <= 0x7E) || (cp  >= 0xA0 && cp <= 0xD7FF) ||      \
       (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF) \
@@ -1085,9 +1073,9 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
       (cp >= 0x20 && cp <= 0xD7FF) || (cp >= 0xE000 && cp <= 0xFFFD) ||   \
       (cp >= 0x10000 && cp <= 0x10FFFF)))
 
-#define XML_IS_CHAR_RESTRICTED(cp, context) ((context->parser->xml_version == XML_1_1) && ((cp >= 0x1 && cp <= 0x8) || (cp >= 0xB && cp <= 0xC) || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84) || (cp >= 0x86 && cp <= 0x9F)))
+#define XML_IS_CHAR_RESTRICTED(cp, context) ((context->parser->xml_version == AXING_XML_VERSION_1_1) && ((cp >= 0x1 && cp <= 0x8) || (cp >= 0xB && cp <= 0xC) || (cp >= 0xE && cp <= 0x1F) || (cp >= 0x7F && cp <= 0x84) || (cp >= 0x86 && cp <= 0x9F)))
 
-#define IS_1_1(context) (context->state != PARSER_STATE_START && context->parser->xml_version == XML_1_1)
+#define IS_1_1(context) (context->state != PARSER_STATE_START && context->parser->xml_version == AXING_XML_VERSION_1_1)
 
 #define XML_IS_SPACE(line, context)                                     \
     ((line)[0] == 0x20 || (line)[0] == 0x09 ||                          \
@@ -1119,8 +1107,8 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
             break;                                                      \
         context->linecur += bytes;                                      \
         context->colnum++;                                              \
-        }                                                               \
-        namevar = g_strndup (start, context->linecur - start);          \
+    }                                                                   \
+    namevar = g_strndup (start, context->linecur - start);              \
     }
 
 /* AXING_XML_PARSER_ERROR_SYNTAX
@@ -1235,69 +1223,31 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 #define CONTEXT_EAT_SPACES(context)                             \
     EAT_SPACES(context->linecur, context->linecur, -1, context)
 
-#define CONTEXT_ADVANCE_CHAR(context, cur, check)                       \
-    if (check) {                                                        \
-        if ((guchar)cur[0] < 0x80) {                                    \
-            if (!(cur[0] == 0x09 || cur[0] == 0x0A ||                   \
-                  cur[0] == 0x0D || cur[0] >= 0x20 )) {                 \
-                context->linecur = cur;                                 \
-                ERROR_SYNTAX_MSG (context, "Invalid character");        \
-            }                                                           \
-        }                                                               \
-        else {                                                          \
-            gunichar cp = g_utf8_get_char(cur);                         \
-            if (!XML_IS_CHAR (cp, context)) {                           \
-                context->linecur = cur;                                 \
-                ERROR_SYNTAX_MSG (context, "Invalid character");        \
-            }                                                           \
-        }                                                               \
-    }                                                                   \
-    if (cur[0] == 0x0A) {                                               \
-        cur++; context->linenum++; context->colnum = 1;                 \
-    }                                                                   \
-    else if (cur[0] == 0x0D) {                                          \
+#define CONTEXT_ADVANCE_CHAR(context, cur, check) {                     \
+    gsize bytes;                                                        \
+    AxingXmlVersion ver = IS_1_1(context) ?                             \
+        AXING_XML_VERSION_1_1 : AXING_XML_VERSION_1_0;                  \
+    bytes = axing_utf8_bytes_newline (cur, ver);                        \
+    if (bytes) {                                                        \
         if (cur != context->linecur)                                    \
             g_string_append_len(context->cur_text,                      \
                                 context->linecur,                       \
                                 cur - context->linecur);                \
         g_string_append_c (context->cur_text, 0x0A);                    \
-        cur++; context->linenum++; context->colnum = 1;                 \
-        if (cur[0] == 0x0A)                                             \
-            cur++;                                                      \
-        else if (IS_1_1(context) &&                                     \
-                 (guchar)cur[0] == 0xC2 &&                              \
-                 (guchar)cur[1] == 0x85)                                \
-            cur = cur + 2;                                              \
+        cur += bytes;                                                   \
+        context->linenum++; context->colnum = 1;                        \
         context->linecur = cur;                                         \
-    }                                                                   \
-    else if (IS_1_1(context) &&                                         \
-             (guchar)cur[0] == 0xC2 &&                                  \
-             (guchar)cur[1] == 0x85) {                                  \
-        if (cur != context->linecur)                                    \
-            g_string_append_len(context->cur_text,                      \
-                                context->linecur,                       \
-                                cur - context->linecur);                \
-        g_string_append_c (context->cur_text, 0x0A);                    \
-        cur = cur + 2; context->colnum = 1; context->linenum++;         \
-        context->linecur = cur;                                         \
-    }                                                                   \
-    else if (IS_1_1(context) &&                                         \
-             (guchar)cur[0] == 0xE2 &&                                  \
-             (guchar)cur[1] == 0x80 &&                                  \
-             (guchar)cur[2] == 0xA8) {                                  \
-        if (cur != context->linecur)                                    \
-            g_string_append_len(context->cur_text,                      \
-                                context->linecur,                       \
-                                cur - context->linecur);                \
-        g_string_append_c (context->cur_text, 0x0A);                    \
-        cur = cur + 3; context->colnum = 1; context->linenum++;         \
-        context->linecur = cur;                                         \
-    }                                                                   \
-    else if ((guchar)cur[0] < 0x80) {                                   \
-        cur++; context->colnum++;                                       \
     }                                                                   \
     else {                                                              \
-        cur = g_utf8_next_char(cur); context->colnum++;                 \
+        bytes = axing_utf8_bytes_character (cur, ver);                  \
+        if (bytes) {                                                    \
+            cur += bytes;                                               \
+            context->colnum++;                                          \
+        }                                                               \
+        else {                                                          \
+            ERROR_SYNTAX_MSG (context, "Invalid character");            \
+        }                                                               \
+    }                                                                   \
     }
 
 #define CHECK_BUFFER(c, num, buf, bufsize, context)                     \
@@ -1625,7 +1575,7 @@ context_parse_xml_decl (Context *context)
 
         CHECK_BUFFER (c, 4, buf, bufsize, context);
         if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
-            context->parser->xml_version = (c[2] == '0') ? XML_1_0 : XML_1_1;
+            context->parser->xml_version = (c[2] == '0') ? AXING_XML_VERSION_1_0 : AXING_XML_VERSION_1_1;
         }
         else {
             ERROR_SYNTAX (context);
@@ -2038,6 +1988,7 @@ context_parse_doctype (Context *context)
     if (context->doctype_state == DOCTYPE_STATE_PUBLIC_VAL) {
         char *cur = context->linecur;
         while (cur[0] != '\0') {
+            gsize bytes;
             if (cur[0] == context->quotechar) {
                 char *public;
                 if (cur != context->linecur)
@@ -2054,15 +2005,25 @@ context_parse_doctype (Context *context)
                     ERROR_SYNTAX_MSG (context, "Expected space"); // test: doctype11
                 break;
             }
-            if (!(cur[0] == 0x20 || cur[0] == 0x0D || cur[0] == 0x0A ||
-                  (cur[0] >= 'a' && cur[0] <= 'z') || (cur[0] >= 'A' && cur[0] <= 'Z') ||
-                  (cur[0] >= '0' && cur[0] <= '9') || (cur[0] >= '\'' && cur[0] <= '/') ||
-                  cur[0] == '!' || cur[0] == '#' || cur[0] == '$' || cur[0] == '%' ||
-                  cur[0] == ':' || cur[0] == ';' || cur[0] == '=' || cur[0] == '?' ||
-                  cur[0] == '@' || cur[0] == '_')) {
-                ERROR_SYNTAX_MSG (context, "Invalid character in public identifier"); // test: doctype16
+            /* Not using axing_utf8_bytes_newline because CR and LF are the only newline
+               characters allowed in a pubid, even in XML 1.1. */
+            if (cur[0] == 0x0D || cur[0] == 0x0A) {
+                if (cur != context->linecur)
+                    g_string_append_len(context->cur_text, context->linecur, cur - context->linecur);
+                g_string_append_c (context->cur_text, 0x0A);
+                context->linenum++;
+                context->colnum = 1;
+                if (cur[0] == 0x0D && cur[1] == 0x0A)
+                    cur += 2;
+                else
+                    cur += 1;
+                continue;
             }
-            CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
+            bytes = axing_utf8_bytes_pubid (cur);
+            if (bytes == 0)
+                ERROR_SYNTAX_MSG (context, "Invalid character in public identifier"); // test: doctype16
+            context->colnum++;
+            cur += bytes;
         }
         if (context->cur_text && cur != context->linecur)
             g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
@@ -3706,7 +3667,6 @@ context_finish_start_element (Context *context)
     event = context->parser->event;
     const char *colon = strchr (event->qname, ':');
     if (colon != NULL) {
-        gunichar cp;
         const char *localname;
         const char *namespace;
         if (colon == event->qname) {
@@ -3716,8 +3676,7 @@ context_finish_start_element (Context *context)
         if (localname[0] == '\0' || strchr (localname, ':')) {
             ERROR_NS_QNAME (context); // test: xmlns10
         }
-        cp = g_utf8_get_char (localname);
-        if (!XML_IS_NAME_START_CHAR(cp)) {
+        if (!axing_utf8_bytes_name_start (localname)) {
             ERROR_NS_QNAME (context); // test: xmlns11
         }
         event->prefix = g_strndup (event->qname,
@@ -3750,7 +3709,6 @@ context_finish_start_element (Context *context)
            Let the getters detect and return "", qname, and "", respectively.
          */
         if (colon != NULL) {
-            gunichar cp;
             const char *localname;
             const char *namespace;
             int pre;
@@ -3761,8 +3719,7 @@ context_finish_start_element (Context *context)
             if (localname[0] == '\0' || strchr (localname, ':')) {
                 ERROR_NS_QNAME_ATTR (context, attr); // test: xmlns14
             }
-            cp = g_utf8_get_char (localname);
-            if (!XML_IS_NAME_START_CHAR (cp)) {
+            if (!axing_utf8_bytes_name_start (localname)) {
                 ERROR_NS_QNAME_ATTR (context, attr); // test: xmlns15
             }
             attr->prefix = g_strndup (attr->qname, colon - attr->qname);
