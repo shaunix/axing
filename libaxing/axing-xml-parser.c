@@ -37,6 +37,27 @@
 
 #define NS_XML "http://www.w3.org/XML/1998/namespace"
 
+
+#define EQ2(s, c1, c2) \
+    ((guchar)(s)[0] == c1 && ((guchar)(s)[1] == c2))
+#define EQ3(s, c1, c2, c3) \
+    (EQ2(s, c1, c2) && ((guchar)(s)[2] == c3))
+#define EQ4(s, c1, c2, c3, c4) \
+    (EQ3(s, c1, c2, c3) && ((guchar)(s)[3] == c4))
+#define EQ5(s, c1, c2, c3, c4, c5) \
+    (EQ4(s, c1, c2, c3, c4) && ((guchar)(s)[4] == c5))
+#define EQ6(s, c1, c2, c3, c4, c5, c6) \
+    (EQ5(s, c1, c2, c3, c4, c5) && ((guchar)(s)[5] == c6))
+#define EQ7(s, c1, c2, c3, c4, c5, c6, c7) \
+    (EQ6(s, c1, c2, c3, c4, c5, c6) && ((guchar)(s)[6] == c7))
+#define EQ8(s, c1, c2, c3, c4, c5, c6, c7, c8) \
+    (EQ7(s, c1, c2, c3, c4, c5, c6, c7) && ((guchar)(s)[7] == c8))
+#define EQ9(s, c1, c2, c3, c4, c5, c6, c7, c8, c9) \
+    (EQ8(s, c1, c2, c3, c4, c5, c6, c7, c8) && ((guchar)(s)[8] == c9))
+#define EQ10(s, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) \
+    (EQ9(s, c1, c2, c3, c4, c5, c6, c7, c8, c9) && ((guchar)(s)[9] == c10))
+
+
 typedef enum {
     PARSER_STATE_NONE,
 
@@ -322,11 +343,11 @@ static void      context_process_entity_finish  (Context              *contetext
 
 static char *    resource_get_basename          (AxingResource        *resource);
 
-static Context *       context_new              (AxingXmlParser       *parser);
-static void            context_free             (Context              *context);
+static inline Context *  context_new            (AxingXmlParser       *parser);
+static inline void       context_free           (Context              *context);
 
-static Event *         event_new                (Context              *context);
-static void            event_free               (Event                *data);
+static inline Event *    event_new              (Context              *context);
+static inline void       event_free             (Event                *data);
 
 
 enum {
@@ -609,11 +630,15 @@ reader_read (AxingReader  *reader,
                chunk for files using non-LF line endings, making large documents
                impossible without LF.
 
+               This also introduces a bug by always putting a line ending at the
+               end of a parsed resource. This bug is tested in entities28, which
+               is currently commented out because it fails.
+
                Ideally, we'd want to use a read function that gives as much data as
                it can from its internal buffer, up to and including the last-seen
                space, newline, or perhaps right angle bracket. I might need to write
                my own GInputStream wrapper, but I really don't want to.
-             */
+            */
             char eol[2] = {0x0A, 0x00};
             if (parser->context->datastream &&
                 (parser->context->line == parser->context->linecur ||
@@ -749,7 +774,7 @@ reader_lookup_namespace (AxingReader *reader,
 {
     AxingXmlParser *parser = AXING_XML_PARSER (reader);
     Event *event, *xmlns;
-    if (g_str_equal (prefix, "xml")) {
+    if (EQ4 (prefix, 'x', 'm', 'l', '\0')) {
         return NS_XML;
     }
     for (event = parser->event; event; event = event->parent) {
@@ -758,7 +783,7 @@ reader_lookup_namespace (AxingReader *reader,
                starts with xmlns:, and we just leave the qname alone instead
                of duping out the prefix. So this is totally safe.
              */
-            if (g_str_equal (xmlns->qname, "xmlns")) {
+            if (EQ6 (xmlns->qname, 'x', 'm', 'l', 'n', 's', '\0')) {
                 if (prefix[0] == '\0')
                     return xmlns->content;
             }
@@ -1486,31 +1511,31 @@ context_parse_bom (Context *context)
 
     buf = (guchar *) g_buffered_input_stream_peek_buffer (G_BUFFERED_INPUT_STREAM (context->datastream), &bufsize);
 
-    if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0xFE && buf[3] == 0xFF) {
+    if (bufsize >= 4 && EQ4 (buf, 0x00, 0x00, 0xFE, 0xFF)) {
         context->bom_encoding = BOM_ENCODING_UCS4_BE;
     }
-    else if (bufsize >= 4 && buf[0] == 0xFF && buf[1] == 0xFE && buf[2] == 0x00 && buf[3] == 0x00) {
+    else if (bufsize >= 4 && EQ4 (buf, 0xFF, 0xFE, 0x00, 0x00)) {
         context->bom_encoding = BOM_ENCODING_UCS4_LE;
     }
-    else if (bufsize >= 2 && buf[0] == 0xFE && buf[1] == 0xFF) {
+    else if (bufsize >= 2 && EQ2 (buf, 0xFE, 0xFF)) {
         context->bom_encoding = BOM_ENCODING_UTF16_BE;
     }
-    else if (bufsize >= 2 && buf[0] == 0xFF && buf[1] == 0xFE) {
+    else if (bufsize >= 2 && EQ2 (buf, 0xFF, 0xFE)) {
         context->bom_encoding = BOM_ENCODING_UTF16_LE;
     }
-    else if (bufsize >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF) {
+    else if (bufsize >= 3 && EQ3 (buf, 0xEF, 0xBB, 0xBF)) {
         context->bom_encoding = BOM_ENCODING_UTF8;
     }
-    else if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0x00 && buf[3] == 0x3C) {
+    else if (bufsize >= 4 && EQ4 (buf, 0x00, 0x00, 0x00, 0x3C)) {
         context->bom_encoding = BOM_ENCODING_4BYTE_BE;
     }
-    else if (bufsize >= 4 && buf[0] == 0x3C && buf[1] == 0x00 && buf[2] == 0x00 && buf[3] == 0x00) {
+    else if (bufsize >= 4 && EQ4 (buf, 0x3C, 0x00, 0x00, 0x00)) {
         context->bom_encoding = BOM_ENCODING_4BYTE_LE;
     }
-    else if (bufsize >= 4 && buf[0] == 0x00 && buf[1] == 0x3C && buf[2] == 0x00 && buf[3] == 0x3F) {
+    else if (bufsize >= 4 && EQ4 (buf, 0x00, 0x3C, 0x00, 0x3F)) {
         context->bom_encoding = BOM_ENCODING_2BYTE_BE;
     }
-    else if (bufsize >= 4 && buf[0] == 0x3C && buf[1] == 0x00 && buf[2] == 0x3F && buf[3] == 0x00) {
+    else if (bufsize >= 4 && EQ4 (buf, 0x3C, 0x00, 0x3F, 0x00)) {
         context->bom_encoding = BOM_ENCODING_2BYTE_LE;
     }
 
@@ -1574,8 +1599,11 @@ context_parse_xml_decl (Context *context)
         READ_TO_QUOTE (c, buf, bufsize, context, quot);
 
         CHECK_BUFFER (c, 4, buf, bufsize, context);
-        if (c[0] == '1' && c[1] == '.' && (c[2] == '0' || c[2] == '1') && c[3] == quot) {
-            context->parser->xml_version = (c[2] == '0') ? AXING_XML_VERSION_1_0 : AXING_XML_VERSION_1_1;
+        if (EQ3 (c, '1', '.', '0')) {
+            context->parser->xml_version = AXING_XML_VERSION_1_0;
+        }
+        else if (EQ3 (c, '1', '.', '1')) {
+            context->parser->xml_version = AXING_XML_VERSION_1_1;
         }
         else {
             ERROR_SYNTAX (context);
@@ -1637,10 +1665,10 @@ context_parse_xml_decl (Context *context)
         READ_TO_QUOTE (c, buf, bufsize, context, quot);
 
         CHECK_BUFFER (c, 3, buf, bufsize, context);
-        if (c[0] == 'y' && c[1] == 'e' && c[2] == 's') {
+        if (EQ3 (c, 'y', 'e', 's')) {
             c += 3; context->colnum += 3;
         }
-        else if (c[0] == 'n' && c[1] == 'o') {
+        else if (EQ2 (c, 'n', 'o')) {
             c += 2; context->colnum += 2;
         }
         else {
@@ -1654,7 +1682,7 @@ context_parse_xml_decl (Context *context)
 
     EAT_SPACES (c, buf, bufsize, context);
     CHECK_BUFFER (c, 2, buf, bufsize, context);
-    if (!(c[0] == '?' && c[1] == '>')) {
+    if (!EQ2 (c, '?', '>')) {
         ERROR_SYNTAX (context);
     }
     c += 2; context->colnum += 2;
@@ -1786,24 +1814,18 @@ context_parse_line (Context *context)
                 switch (context->linecur[1]) {
                 case '!':
                     if (context->state == PARSER_STATE_TEXT &&
-                        context->linecur[2] == '[' && context->linecur[3] == 'C' &&
-                        context->linecur[4] == 'D' && context->linecur[5] == 'A' &&
-                        context->linecur[6] == 'T' && context->linecur[7] == 'A' &&
-                        context->linecur[8] == '[' ) {
+                        EQ7 (context->linecur + 2, '[', 'C', 'D', 'A', 'T', 'A', '[')){
                         context_parse_cdata (context);
                         if (context->parser->event_type != AXING_NODE_TYPE_NONE)
                             return;
                         break;
                     }
                     else if (context->state != PARSER_STATE_TEXT &&
-                             context->linecur[2] == 'D' && context->linecur[3] == 'O' &&
-                             context->linecur[4] == 'C' && context->linecur[5] == 'T' &&
-                             context->linecur[6] == 'Y' && context->linecur[7] == 'P' &&
-                             context->linecur[8] == 'E' ) {
+                             EQ7 (context->linecur + 2, 'D', 'O', 'C', 'T', 'Y', 'P', 'E')) {
                         context_parse_doctype (context);
                         break;
                     }
-                    else if (context->linecur[2] == '-' && context->linecur[3] == '-') {
+                    else if (EQ2 (context->linecur + 2, '-', '-')) {
                         context_parse_comment (context);
                         if (context->parser->event_type != AXING_NODE_TYPE_NONE)
                             return;
@@ -1910,11 +1932,7 @@ context_parse_doctype (Context *context)
     case PARSER_STATE_START:
     case PARSER_STATE_PROLOG:
         g_assert (context->parser->doctype == NULL);
-        g_assert (context->linecur[0] == '<' && context->linecur[1] == '!' &&
-                  context->linecur[2] == 'D' && context->linecur[3] == 'O' &&
-                  context->linecur[4] == 'C' && context->linecur[5] == 'T' &&
-                  context->linecur[6] == 'Y' && context->linecur[7] == 'P' &&
-                  context->linecur[8] == 'E' );
+        g_assert (EQ9 (context->linecur, '<', '!', 'D', 'O', 'C', 'T', 'Y', 'P', 'E'));
         context->linecur += 9; context->colnum += 9;
         CONTEXT_EAT_SPACES (context);
         context->state = PARSER_STATE_DOCTYPE;
@@ -1957,11 +1975,11 @@ context_parse_doctype (Context *context)
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT;
         }
-        else if (g_str_has_prefix (context->linecur, "SYSTEM")) {
+        else if (EQ6 (context->linecur, 'S', 'Y', 'S', 'T', 'E', 'M')) {
             context->linecur += 6; context->colnum += 6;
             context->doctype_state = DOCTYPE_STATE_SYSTEM;
         }
-        else if (g_str_has_prefix (context->linecur, "PUBLIC")) {
+        else if (EQ6 (context->linecur, 'P', 'U', 'B', 'L', 'I', 'C')) {
             context->linecur += 6; context->colnum += 6;
             context->doctype_state = DOCTYPE_STATE_PUBLIC;
         }
@@ -2105,27 +2123,27 @@ context_parse_doctype (Context *context)
             if (context != context->parser->context)
                 return;
         }
-        else if (g_str_has_prefix (context->linecur, "<!ELEMENT")) {
+        else if (EQ9 (context->linecur, '<', '!', 'E', 'L', 'E', 'M', 'E', 'N', 'T')) {
             context_parse_doctype_element (context);
             if (context->parser->error) goto error;
         }
-        else if (g_str_has_prefix (context->linecur, "<!ATTLIST")) {
+        else if (EQ9 (context->linecur, '<', '!', 'A', 'T', 'T', 'L', 'I', 'S', 'T')) {
             context_parse_doctype_attlist (context);
             if (context->parser->error) goto error;
         }
-        else if (g_str_has_prefix (context->linecur, "<!ENTITY")) {
+        else if (EQ8 (context->linecur, '<', '!', 'E', 'N', 'T', 'I', 'T', 'Y')) {
             context_parse_doctype_entity (context);
             if (context->parser->error) goto error;
         }
-        else if (g_str_has_prefix (context->linecur, "<!NOTATION")) {
+        else if (EQ10 (context->linecur, '<', '!', 'N', 'O', 'T', 'A', 'T', 'I', 'O', 'N')) {
             context_parse_doctype_notation (context);
             if (context->parser->error) goto error;
         }
-        else if (g_str_has_prefix (context->linecur, "<!--")) {
+        else if (EQ4 (context->linecur, '<', '!', '-', '-')) {
             context_parse_comment (context);
             if (context->parser->error) goto error;
         }
-        else if (g_str_has_prefix (context->linecur, "<?")) {
+        else if (EQ2 (context->linecur, '<', '?')) {
             context_parse_instruction (context);
             if (context->parser->error) goto error;
         }
@@ -2196,7 +2214,7 @@ context_parse_doctype_element (Context *context)
 {
     AXING_DEBUG ("context_parse_doctype_element: %s\n", context->linecur);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
-        g_assert (g_str_has_prefix(context->linecur, "<!ELEMENT"));
+        g_assert (EQ9 (context->linecur, '<', '!', 'E', 'L', 'E', 'M', 'E', 'N', 'T'));
         context->linecur += 9; context->colnum += 9;
         if (!(XML_IS_SPACE(context->linecur, context) || context->linecur[0] == '\0'))
             ERROR_SYNTAX_MSG (context, "Expected space"); // test: doctype19
@@ -2218,12 +2236,12 @@ context_parse_doctype_element (Context *context)
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
-        if (g_str_has_prefix (context->linecur, "EMPTY")) {
+        if (EQ5 (context->linecur, 'E', 'M', 'P', 'T', 'Y')) {
             context->cur_text = g_string_new ("EMPTY");
             context->linecur += 5; context->colnum += 5;
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
         }
-        else if (g_str_has_prefix (context->linecur, "ANY")) {
+        else if (EQ3 (context->linecur, 'A', 'N', 'Y')) {
             context->cur_text = g_string_new ("ANY");
             context->linecur += 3; context->colnum += 3;
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
@@ -2255,6 +2273,10 @@ context_parse_doctype_element (Context *context)
                   cur[0] == '?' || cur[0] == '#' )) {
                 ERROR_SYNTAX_MSG (context, "Expected valid element production character"); // test: doctype35
             }
+            /* FIXME: we can replace the above character checks with something
+               that gives us bytes, so we don't have to get bytes again with
+               CONTEXT_ADVANCE_CHAR.
+             */
             CONTEXT_ADVANCE_CHAR (context, cur, FALSE);
         }
         if (context->cur_text && cur != context->linecur)
@@ -2291,7 +2313,7 @@ context_parse_doctype_attlist (Context *context)
 {
     AXING_DEBUG ("context_parse_doctype_attlist: %s\n", context->linecur);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
-        g_assert (g_str_has_prefix(context->linecur, "<!ATTLIST"));
+        g_assert (EQ9 (context->linecur, '<', '!', 'A', 'T', 'T', 'L', 'I', 'S', 'T'));
         context->linecur += 9; context->colnum += 9;
         if (!(XML_IS_SPACE(context->linecur, context) || context->linecur[0] == '\0'))
             ERROR_SYNTAX_MSG (context, "Expected space"); // test: doctype21
@@ -2343,6 +2365,10 @@ context_parse_doctype_attlist (Context *context)
                   cur[0] == '#' || cur[0] == '|' || cur[0] == '(' || cur[0] == ')' )) {
                 ERROR_SYNTAX_MSG (context, "Expected valid attribute value production character"); // test: doctype36
             }
+            /* FIXME: we can replace the above character checks with something
+               that gives us bytes, so we don't have to get bytes again with
+               CONTEXT_ADVANCE_CHAR.
+             */
             CONTEXT_ADVANCE_CHAR (context, cur, FALSE);
         }
         if (context->cur_text && cur != context->linecur)
@@ -2397,7 +2423,7 @@ static void
 context_parse_doctype_notation (Context *context) {
     AXING_DEBUG ("context_parse_doctype_notation: %s\n", context->linecur);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
-        g_assert (g_str_has_prefix(context->linecur, "<!NOTATION"));
+        g_assert (EQ10 (context->linecur, '<', '!', 'N', 'O', 'T', 'A', 'T', 'I', 'O', 'N'));
         context->linecur += 10; context->colnum += 10;
         if (!(XML_IS_SPACE(context->linecur, context) || context->linecur[0] == '\0'))
             ERROR_SYNTAX_MSG (context, "Expected space"); // test: doctype23
@@ -2419,15 +2445,11 @@ context_parse_doctype_notation (Context *context) {
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
-        if (context->linecur[0] == 'S' && context->linecur[1] == 'Y' &&
-            context->linecur[2] == 'S' && context->linecur[3] == 'T' &&
-            context->linecur[4] == 'E' && context->linecur[5] == 'M' ) {
+        if (EQ6 (context->linecur, 'S', 'Y', 'S', 'T', 'E', 'M')) {
             context->linecur += 6; context->colnum += 6;
             context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM;
         }
-        else if (context->linecur[0] == 'P' && context->linecur[1] == 'U' &&
-                 context->linecur[2] == 'B' && context->linecur[3] == 'L' &&
-                 context->linecur[4] == 'I' && context->linecur[5] == 'C' ) {
+        else if (EQ6 (context->linecur, 'P', 'U', 'B', 'L', 'I', 'C')) {
             context->linecur += 6; context->colnum += 6;
             context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC;
         }
@@ -2565,7 +2587,7 @@ static void
 context_parse_doctype_entity (Context *context) {
     AXING_DEBUG ("context_parse_doctype_entity: %s\n", context->linecur);
     if (context->doctype_state == DOCTYPE_STATE_INT) {
-        g_assert (g_str_has_prefix(context->linecur, "<!ENTITY"));
+        g_assert (EQ8 (context->linecur, '<', '!', 'E', 'N', 'T', 'I', 'T', 'Y'));
         context->linecur += 8; context->colnum += 8;
         if (!(XML_IS_SPACE (context->linecur, context) || context->linecur[0] == '\0'))
             ERROR_SYNTAX_MSG (context, "Expected space"); // test: entities40
@@ -2600,14 +2622,14 @@ context_parse_doctype_entity (Context *context) {
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
-        if (g_str_has_prefix (context->linecur, "SYSTEM")) {
+        if (EQ6 (context->linecur, 'S', 'Y', 'S', 'T', 'E', 'M')) {
             context->linecur += 6; context->colnum += 6;
             if (!(XML_IS_SPACE (context->linecur, context) || context->linecur[0] == '\0'))
                 ERROR_SYNTAX_MSG (context, "Expected space"); // test: entities41
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
             CONTEXT_EAT_SPACES (context);
         }
-        else if (g_str_has_prefix (context->linecur, "PUBLIC")) {
+        else if (EQ6 (context->linecur, 'P', 'U', 'B', 'L', 'I', 'C')) {
             context->linecur += 6; context->colnum += 6;
             if (!(XML_IS_SPACE (context->linecur, context) || context->linecur[0] == '\0'))
                 ERROR_SYNTAX_MSG (context, "Expected space"); // test: entities42
@@ -2733,7 +2755,7 @@ context_parse_doctype_entity (Context *context) {
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
-        if (g_str_has_prefix (context->linecur, "NDATA")) {
+        if (EQ5 (context->linecur, 'N', 'D', 'A', 'T', 'A')) {
             if (context->cur_text != NULL    || /* not after an EntityValue */
                 context->decl_system == NULL || /* only after PUBLIC or SYSTEM */
                 context->decl_pedef == TRUE  || /* no NDATA on param entities */
@@ -2892,11 +2914,7 @@ context_parse_cdata (Context *context)
 
     AXING_DEBUG ("context_parse_cdata: %s\n", context->linecur);
     if (context->state != PARSER_STATE_CDATA) {
-        g_assert (context->linecur[0] == '<' && context->linecur[1] == '!' &&
-                  context->linecur[2] == '[' && context->linecur[3] == 'C' &&
-                  context->linecur[4] == 'D' && context->linecur[5] == 'A' &&
-                  context->linecur[6] == 'T' && context->linecur[7] == 'A' &&
-                  context->linecur[8] == '[' );
+        g_assert (EQ9 (context->linecur, '<', '!', '[', 'C', 'D', 'A', 'T', 'A', '['));
         event = event_new (context);
         event->parent = context->parser->event;
         AXING_DEBUG ("  PUSH CDATA EVENT\n");
@@ -2910,7 +2928,7 @@ context_parse_cdata (Context *context)
 
     start = context->linecur;
     while (context->linecur[0] != '\0') {
-        if (context->linecur[0] == ']' && context->linecur[1] == ']' && context->linecur[2] == '>') {
+        if (EQ3 (context->linecur, ']', ']', '>')) {
             g_string_append_len (context->cur_text, start, context->linecur - start);
             context->linecur += 3; context->colnum += 3;
             context->parser->event->content = g_string_free (context->cur_text, FALSE);
@@ -2935,8 +2953,7 @@ context_parse_comment (Context *context)
     Event *event;
     AXING_DEBUG ("context_parse_comment: %s\n", context->linecur);
     if (context->state != PARSER_STATE_COMMENT) {
-        g_assert (context->linecur[0] == '<' && context->linecur[1] == '!' &&
-                  context->linecur[2] == '-' && context->linecur[3] == '-' );
+        g_assert (EQ4 (context->linecur, '<', '!', '-', '-'));
         event = event_new (context);
         event->parent = context->parser->event;
         AXING_DEBUG ("  PUSH COMMENT EVENT\n");
@@ -3002,7 +3019,7 @@ context_parse_instruction (Context *context)
     Event *event;
     AXING_DEBUG ("context_parse_instruction: %s\n", context->linecur);
     if (context->state != PARSER_STATE_INSTRUCTION) {
-        g_assert (context->linecur[0] == '<' && context->linecur[1] == '?');
+        g_assert (EQ2 (context->linecur, '<', '?'));
 
         event = event_new (context);
         event->parent = context->parser->event;
@@ -3034,7 +3051,7 @@ context_parse_instruction (Context *context)
         event = context->parser->event;
 
         while (cur[0] != '\0') {
-            if (cur[0] == '?' && cur[1] == '>') {
+            if (EQ2 (cur, '?', '>')) {
                 if (context->prev_state == PARSER_STATE_DOCTYPE) {
                     /* currently not doing anything with PIs in the internal subset */
                     cur += 2; context->colnum += 2;
@@ -3084,7 +3101,7 @@ context_parse_end_element (Context *context)
            space or newlines between the qname and the ">". That would set the
            state and potentially re-enter this function later.
          */
-        g_assert (context->linecur[0] == '<' && context->linecur[1] == '/');
+        g_assert (EQ2 (context->linecur, '<', '/'));
 
         if (context->parser->event == NULL ||
             context->parser->event->context != context) {
@@ -3162,7 +3179,7 @@ context_parse_start_element (Context *context)
         context_finish_start_element (context);
         return;
     }
-    else if (context->linecur[0] == '/' && context->linecur[1] == '>') {
+    else if (EQ2 (context->linecur, '/', '>')) {
         event->empty = TRUE;
         context->linecur += 2; context->colnum += 2;
         context_finish_start_element (context);
@@ -3194,7 +3211,7 @@ context_parse_attrs (Context *context)
             context_finish_start_element (context);
             return;
         }
-        else if (context->linecur[0] == '/' && context->linecur[1] == '>') {
+        else if (EQ2 (context->linecur, '/', '>')) {
             context->parser->event->empty = TRUE;
             context->linecur += 2; context->colnum += 2;
             context_finish_start_element (context);
@@ -3260,11 +3277,11 @@ context_parse_attrs (Context *context)
                 context->cur_text = NULL;
                 attr = context->parser->event->attrs;
 
-                if (g_str_has_prefix (attr->qname, "xmlns:")) {
+                if (EQ6 (attr->qname, 'x', 'm', 'l', 'n', 's', ':')) {
                     /* FIXME: if cur_attrname == "xmlns:"? */
                     xmlns = attr->qname + 6;
                 }
-                else if (g_str_equal (attr->qname, "xmlns")) {
+                else if (EQ6 (attr->qname, 'x', 'm', 'l', 'n', 's', '\0')) {
                     xmlns = "";
                 }
 
@@ -3276,7 +3293,7 @@ context_parse_attrs (Context *context)
                     xmlnsev->parent = context->parser->event->xmlns;
                     context->parser->event->xmlns = xmlnsev;
 
-                    if (g_str_equal (xmlns, "xml")) {
+                    if (EQ4 (xmlns, 'x', 'm', 'l', '\0')) {
                         if (!g_str_equal(attrval, NS_XML))
                             ERROR_NS_INVALID (context, xmlns); // test: xmlns06
                     }
@@ -3284,7 +3301,7 @@ context_parse_attrs (Context *context)
                         if (g_str_equal(attrval, NS_XML))
                             ERROR_NS_INVALID (context, xmlns); // test: xmlns07
                     }
-                    if (g_str_equal (xmlns, "xmlns")) {
+                    if (EQ6 (xmlns, 'x', 'm', 'l', 'n', 's', '\0')) {
                         ERROR_NS_INVALID (context, xmlns); // test: xmlns08
                     }
                     /* FIXME REFACTOR look for dups
@@ -3423,15 +3440,15 @@ context_parse_entity (Context *context)
         entname = g_strndup (beg, context->linecur - beg);
         context->linecur++; context->colnum++;
 
-        if (g_str_equal (entname, "lt"))
+        if (EQ3 (entname, 'l', 't', '\0'))
             builtin = '<';
-        else if (g_str_equal (entname, "gt"))
+        else if (EQ3 (entname, 'g', 't', '\0'))
             builtin = '>';
-        else if (g_str_equal (entname, "amp"))
+        else if (EQ4 (entname, 'a', 'm', 'p', '\0'))
             builtin = '&';
-        else if (g_str_equal (entname, "apos"))
+        else if (EQ5 (entname, 'a', 'p', 'o', 's', '\0'))
             builtin = '\'';
-        else if (g_str_equal (entname, "quot"))
+        else if (EQ5 (entname, 'q', 'u', 'o', 't', '\0'))
             builtin = '"';
 
         if (builtin != '\0') {
@@ -3680,7 +3697,7 @@ context_finish_start_element (Context *context)
             ERROR_NS_QNAME (context); // test: xmlns11
         }
         event->prefix = g_strndup (event->qname,
-                                                   colon - event->qname);
+                                   colon - event->qname);
         event->localname = g_strdup (localname);
         namespace = reader_lookup_namespace (AXING_READER (context->parser),
                                              event->prefix);
@@ -3794,7 +3811,7 @@ resource_get_basename (AxingResource *resource)
 }
 
 
-static Context *
+static inline Context *
 context_new (AxingXmlParser *parser)
 {
     Context *context;
@@ -3814,7 +3831,7 @@ context_new (AxingXmlParser *parser)
 }
 
 
-static void
+static inline void
 context_free (Context *context)
 {
     g_clear_object (&context->resource);
@@ -3841,7 +3858,7 @@ context_free (Context *context)
 }
 
 
-static Event *
+static inline Event *
 event_new (Context *context)
 {
     Event *event;
@@ -3851,7 +3868,7 @@ event_new (Context *context)
 }
 
 
-static void
+static inline void
 event_free (Event *event)
 {
     g_free (event->qname);
