@@ -1,0 +1,100 @@
+[ very |very () {}very 1:1
+  [ deeply |deeply () {}deeply 1:7
+    [ nested |nested () {}nested 1:15
+      [ elements |elements () {}elements 1:23
+        # %0A%20
+        [ very |very () {}very 2:2
+          [ deeply |deeply () {}deeply 2:8
+            [ nested |nested () {}nested 2:16
+              [ elements |elements () {}elements 2:24
+                # %0A%20%20
+                [ very |very () {}very 3:3
+                  [ deeply |deeply () {}deeply 3:9
+                    [ nested |nested () {}nested 3:17
+                      [ elements |elements () {}elements 3:25
+                        # %0A%20%20%20
+                        [ very |very () {}very 4:4
+                          [ deeply |deeply () {}deeply 4:10
+                            [ nested |nested () {}nested 4:18
+                              [ elements |elements () {}elements 4:26
+                                # %0A%20%20%20%20
+                                [ very |very () {}very 5:5
+                                  [ deeply |deeply () {}deeply 5:11
+                                    [ nested |nested () {}nested 5:19
+                                      [ elements |elements () {}elements 5:27
+                                        # %0A%20%20%20%20%20
+                                        [ very |very () {}very 6:6
+                                          [ deeply |deeply () {}deeply 6:12
+                                            [ nested |nested () {}nested 6:20
+                                              [ elements |elements () {}elements 6:28
+                                                # %0A%20%20%20%20%20%20
+                                                [ very |very () {}very 7:7
+                                                  [ deeply |deeply () {}deeply 7:13
+                                                    [ nested |nested () {}nested 7:21
+                                                      [ elements |elements () {}elements 7:29
+                                                        # %0A%20%20%20%20%20%20%20
+                                                        [ very |very () {}very 8:8
+                                                          [ deeply |deeply () {}deeply 8:14
+                                                            [ nested |nested () {}nested 8:22
+                                                              [ elements |elements () {}elements 8:30
+                                                                # %0A%20%20%20%20%20%20%20%20
+                                                                [ very |very () {}very 9:9
+                                                                  [ deeply |deeply () {}deeply 9:15
+                                                                    [ nested |nested () {}nested 9:23
+                                                                      [ elements |elements () {}elements 9:31
+                                                                        # %0A%20%20%20%20%20%20%20%20%20
+                                                                        [ very |very () {}very 10:10
+                                                                          [ deeply |deeply () {}deeply 10:16
+                                                                            [ nested |nested () {}nested 10:24
+                                                                              [ elements |elements () {}elements 10:32
+                                                                                # %0A%20%20%20%20%20%20%20%20%20%20%20nested%20very%20deeply%0A%20%20%20%20%20%20%20%20%20
+                                                                              ] elements |elements () {}elements 12:10
+                                                                            ] nested |nested () {}nested 12:21
+                                                                          ] deeply |deeply () {}deeply 12:30
+                                                                        ] very |very () {}very 12:39
+                                                                        # %0A%20%20%20%20%20%20%20%20
+                                                                      ] elements |elements () {}elements 13:9
+                                                                    ] nested |nested () {}nested 13:20
+                                                                  ] deeply |deeply () {}deeply 13:29
+                                                                ] very |very () {}very 13:38
+                                                                # %0A%20%20%20%20%20%20%20
+                                                              ] elements |elements () {}elements 14:8
+                                                            ] nested |nested () {}nested 14:19
+                                                          ] deeply |deeply () {}deeply 14:28
+                                                        ] very |very () {}very 14:37
+                                                        # %0A%20%20%20%20%20%20
+                                                      ] elements |elements () {}elements 15:7
+                                                    ] nested |nested () {}nested 15:18
+                                                  ] deeply |deeply () {}deeply 15:27
+                                                ] very |very () {}very 15:36
+                                                # %0A%20%20%20%20%20
+                                              ] elements |elements () {}elements 16:6
+                                            ] nested |nested () {}nested 16:17
+                                          ] deeply |deeply () {}deeply 16:26
+                                        ] very |very () {}very 16:35
+                                        # %0A%20%20%20%20
+                                      ] elements |elements () {}elements 17:5
+                                    ] nested |nested () {}nested 17:16
+                                  ] deeply |deeply () {}deeply 17:25
+                                ] very |very () {}very 17:34
+                                # %0A%20%20%20
+                              ] elements |elements () {}elements 18:4
+                            ] nested |nested () {}nested 18:15
+                          ] deeply |deeply () {}deeply 18:24
+                        ] very |very () {}very 18:33
+                        # %0A%20%20
+                      ] elements |elements () {}elements 19:3
+                    ] nested |nested () {}nested 19:14
+                  ] deeply |deeply () {}deeply 19:23
+                ] very |very () {}very 19:32
+                # %0A%20
+              ] elements |elements () {}elements 20:2
+            ] nested |nested () {}nested 20:13
+          ] deeply |deeply () {}deeply 20:22
+        ] very |very () {}very 20:31
+        # %0A
+      ] elements |elements () {}elements 21:1
+    ] nested |nested () {}nested 21:12
+  ] deeply |deeply () {}deeply 21:21
+] very |very () {}very 21:30
+finish

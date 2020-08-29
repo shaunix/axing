@@ -11,7 +11,7 @@ main (int argc, char **argv)
   setlocale(LC_ALL, "");
 
   for (i = 0; i < 100; i++) {
-    reader = xmlReaderForFile ("time.xml", NULL, XML_PARSE_NOENT);
+    reader = xmlReaderForFile (argv[1] ? argv[1] : "time.xml", NULL, XML_PARSE_NOENT);
 
     while (xmlTextReaderRead (reader)) {}
 

@@ -38,6 +38,7 @@
 
 #define NS_XML "http://www.w3.org/XML/1998/namespace"
 
+#define EVENTPOOLSIZE 32
 
 #define EQ2(s, c1, c2) \
     ((guchar)(s)[0] == c1 && ((guchar)(s)[1] == c2))
@@ -196,6 +197,8 @@ typedef struct _Event Event;
 struct _Event {
     Event *parent;
 
+    gboolean inuse;
+
     char *qname;
     char *prefix;
     char *localname;
@@ -212,8 +215,7 @@ struct _Event {
     int linenum;
     int colnum;
 
-    /* Only used as identifier. Do not dereference. Do not free */
-    gpointer context;
+    Context *context;
 };
 
 struct _AxingXmlParser {
@@ -238,6 +240,9 @@ struct _AxingXmlParser {
     char                *txtcontent;
     int                  txtlinenum;
     int                  txtcolnum;
+
+    Event                eventpool[EVENTPOOLSIZE];
+    int                  eventpoolstart;
 };
 
 
@@ -3861,6 +3866,17 @@ static inline Event *
 event_new (Context *context)
 {
     Event *event;
+
+    while (context->parser->eventpoolstart < EVENTPOOLSIZE) {
+        if (!context->parser->eventpool[context->parser->eventpoolstart].inuse) {
+            event = &(context->parser->eventpool[context->parser->eventpoolstart]);
+            event->inuse = TRUE;
+            event->context = context;
+            event->empty = FALSE;
+            return event;
+        }
+        context->parser->eventpoolstart++;
+    }
     event = g_new0 (Event, 1);
     event->context = context;
     return event;
@@ -3870,14 +3886,23 @@ event_new (Context *context)
 static inline void
 event_free (Event *event)
 {
-    g_free (event->qname);
-    g_free (event->prefix);
-    g_free (event->localname);
-    g_free (event->namespace);
-    g_free (event->nsname);
-    g_free (event->content);
+    event->parent = NULL;
 
-    g_free (event->attrkeys); /* actual strings owned by attr structs */
+    if (event->qname)
+        g_clear_pointer (&(event->qname), g_free);
+    if (event->prefix)
+        g_clear_pointer (&(event->prefix), g_free);
+    if (event->localname)
+        g_clear_pointer (&(event->localname), g_free);
+    if (event->namespace)
+        g_clear_pointer (&(event->namespace), g_free);
+    if (event->nsname)
+        g_clear_pointer (&(event->nsname), g_free);
+    if (event->content)
+        g_clear_pointer (&(event->content), g_free);
+
+    if (event->attrkeys)
+        g_clear_pointer (&(event->attrkeys), g_free); /* actual strings owned by attr structs */
 
     while (event->attrs) {
         Event *freeattr = event->attrs;
@@ -3891,5 +3916,13 @@ event_free (Event *event)
         event_free (freeattr);
     }
 
-    g_free (event);
+    if (event->context &&
+        event >= event->context->parser->eventpool &&
+        event < event->context->parser->eventpool + EVENTPOOLSIZE) {
+        event->context->parser->eventpoolstart = MIN (event - event->context->parser->eventpool,
+                                                      event->context->parser->eventpoolstart);
+        event->inuse = 0;
+    } else {
+        g_free (event);
+    }
 }

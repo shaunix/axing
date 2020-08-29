@@ -17,7 +17,7 @@ main (int argc, char **argv)
   setlocale(LC_ALL, "");
 
   for (i = 0; i < 100; i++) {
-    file = g_file_new_for_path ("time.xml");
+    file = g_file_new_for_path (argv[1] ? argv[1] : "time.xml");
     resource = axing_resource_new (file, NULL);
     parser = axing_xml_parser_new (resource, NULL);
     reader = AXING_READER (parser);
