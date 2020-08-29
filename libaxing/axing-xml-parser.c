@@ -28,6 +28,7 @@
 #include "axing-xml-parser.h"
 #include "axing-utf8.h"
 
+
 #if 1
 #define AXING_DEBUG(args...) if (g_getenv("AXING_DEBUG")) g_print(args);
 #else
@@ -139,6 +140,7 @@ typedef enum {
     DOCTYPE_STATE_NULL
 } DoctypeState;
 
+// FIXME I think I'd like this public, but we don't have an accessor yet
 typedef enum {
     BOM_ENCODING_NONE,
     BOM_ENCODING_UCS4_BE,
@@ -232,6 +234,10 @@ struct _AxingXmlParser {
 
     AxingNodeType        event_type;
     Event               *event;
+
+    char                *txtcontent;
+    int                  txtlinenum;
+    int                  txtcolnum;
 };
 
 
@@ -542,12 +548,19 @@ parser_clear_event (AxingXmlParser *parser)
         return;
     }
     switch (parser->event_type) {
-    case AXING_NODE_TYPE_END_ELEMENT:
-    case AXING_NODE_TYPE_CONTENT:
     case AXING_NODE_TYPE_COMMENT:
+    case AXING_NODE_TYPE_CONTENT:
     case AXING_NODE_TYPE_CDATA:
+        if (parser->txtcontent)
+            g_clear_pointer (&(parser->txtcontent), g_free);
+        break;
     case AXING_NODE_TYPE_INSTRUCTION:
-        AXING_DEBUG ("  POP EVENT\n");
+        if (parser->txtcontent)
+            g_clear_pointer (&(parser->txtcontent), g_free);
+        if (parser->context->cur_qname)
+            g_clear_pointer (&(parser->context->cur_qname), g_free);
+        break;
+    case AXING_NODE_TYPE_END_ELEMENT:
         event = parser->event;
         parser->event = parser->event->parent;
         event_free (event);
@@ -705,6 +718,8 @@ reader_get_qname (AxingReader *reader)
                           parser->event_type == AXING_NODE_TYPE_END_ELEMENT ||
                           parser->event_type == AXING_NODE_TYPE_INSTRUCTION,
                           NULL);
+    if (parser->event_type == AXING_NODE_TYPE_INSTRUCTION)
+        return parser->context->cur_qname;
     return parser->event->qname;
 }
 
@@ -807,7 +822,7 @@ reader_get_content (AxingReader *reader)
                           parser->event_type == AXING_NODE_TYPE_CDATA   ||
                           parser->event_type == AXING_NODE_TYPE_INSTRUCTION,
                           NULL);
-    return parser->event->content;
+    return parser->txtcontent;
 }
 
 
@@ -818,7 +833,13 @@ reader_get_linenum(AxingReader *reader)
     g_return_val_if_fail (AXING_IS_XML_PARSER (reader), 0);
     parser = (AxingXmlParser *) reader;
     g_return_val_if_fail (parser->event_type != AXING_NODE_TYPE_NONE, 0);
-    return parser->event->linenum;
+    if (parser->event_type == AXING_NODE_TYPE_CONTENT ||
+        parser->event_type == AXING_NODE_TYPE_COMMENT ||
+        parser->event_type == AXING_NODE_TYPE_CDATA   ||
+        parser->event_type == AXING_NODE_TYPE_INSTRUCTION)
+        return parser->txtlinenum;
+    else
+        return parser->event->linenum;
 }
 
 
@@ -829,7 +850,13 @@ reader_get_colnum (AxingReader *reader)
     g_return_val_if_fail (AXING_IS_XML_PARSER (reader), 0);
     parser = (AxingXmlParser *) reader;
     g_return_val_if_fail (parser->event_type != AXING_NODE_TYPE_NONE, 0);
-    return parser->event->colnum;
+    if (parser->event_type == AXING_NODE_TYPE_CONTENT ||
+        parser->event_type == AXING_NODE_TYPE_COMMENT ||
+        parser->event_type == AXING_NODE_TYPE_CDATA   ||
+        parser->event_type == AXING_NODE_TYPE_INSTRUCTION)
+        return parser->txtcolnum;
+    else
+        return parser->event->colnum;
 }
 
 
@@ -1088,6 +1115,7 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 
 #endif /* REFACTOR */
 
+
 #define XML_IS_CHAR(cp, context)                                          \
     ((context->parser->xml_version == AXING_XML_VERSION_1_1) ?            \
      (cp == 0x09 || cp == 0x0A || cp == 0x0D || cp == 0x85 ||             \
@@ -1102,6 +1130,7 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
 
 #define IS_1_1(context) (context->state != PARSER_STATE_START && context->parser->xml_version == AXING_XML_VERSION_1_1)
 
+/* FIXME: put this in axing-utf8.h */
 #define XML_IS_SPACE(line, context)                                     \
     ((line)[0] == 0x20 || (line)[0] == 0x09 ||                          \
      (line)[0] == 0x0D || (line)[0] == 0x0A ||                          \
@@ -1135,6 +1164,7 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
     }                                                                   \
     namevar = g_strndup (start, context->linecur - start);              \
     }
+
 
 /* AXING_XML_PARSER_ERROR_SYNTAX
    We got the wrong kind of special character. Generally, only use this for errors
@@ -1794,17 +1824,14 @@ context_parse_line (Context *context)
             if (context->linecur[0] == '<') {
                 if (context->state == PARSER_STATE_TEXT && context->cur_text != NULL) {
                     g_free (context->parser->event->content);
-                    context->parser->event->content = g_string_free (context->cur_text, FALSE);
+                    context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
                     context->cur_text = NULL;
                     /* A well-placed entity can fool the parser into making a GString
                        when we don't actually need one. If there's no text, don't return
                        an event.
                     */
-                    if (context->parser->event->content[0] == '\0') {
-                        Event *event = context->parser->event;
-                        AXING_DEBUG ("  POP EVENT\n");
-                        context->parser->event = event->parent;
-                        event_free (event);
+                    if (context->parser->txtcontent[0] == '\0') {
+                        g_clear_pointer(&(context->parser->txtcontent), g_free);
                     }
                     else {
                         context->parser->event_type = AXING_NODE_TYPE_CONTENT;
@@ -2879,7 +2906,10 @@ context_parse_parameter (Context *context)
         AXING_DEBUG ("  PUSH PARAMETER STRING CONTEXT\n");
 
         entctxt->parent = context;
+        /* FIXME: maybe we could avoid the strdup, and have context_free
+           check if ->basename == ->parent->basename before freeing */
         entctxt->basename = g_strdup (context->basename);
+        /* FIXME: we can hand ownership over without the strdup */
         entctxt->entname = g_strdup (entname);
         entctxt->showname = g_strdup_printf ("%s(%%%s;)", entctxt->basename, entname);
         entctxt->state = context->state;
@@ -2909,18 +2939,13 @@ context_parse_parameter (Context *context)
 static void
 context_parse_cdata (Context *context)
 {
-    Event *event;
     char *start;
 
     AXING_DEBUG ("context_parse_cdata: %s\n", context->linecur);
     if (context->state != PARSER_STATE_CDATA) {
         g_assert (EQ9 (context->linecur, '<', '!', '[', 'C', 'D', 'A', 'T', 'A', '['));
-        event = event_new (context);
-        event->parent = context->parser->event;
-        AXING_DEBUG ("  PUSH CDATA EVENT\n");
-        context->parser->event = event;
-        event->linenum = context->linenum;
-        event->colnum = context->colnum;
+        context->parser->txtlinenum = context->linenum;
+        context->parser->txtcolnum = context->colnum;
         context->linecur += 9; context->colnum += 9;
         context->cur_text = g_string_new (NULL);
         context->state = PARSER_STATE_CDATA;
@@ -2931,7 +2956,7 @@ context_parse_cdata (Context *context)
         if (EQ3 (context->linecur, ']', ']', '>')) {
             g_string_append_len (context->cur_text, start, context->linecur - start);
             context->linecur += 3; context->colnum += 3;
-            context->parser->event->content = g_string_free (context->cur_text, FALSE);
+            context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
             context->cur_text = NULL;
             context->parser->event_type = AXING_NODE_TYPE_CDATA;
             context->state = PARSER_STATE_TEXT;
@@ -2950,16 +2975,11 @@ context_parse_cdata (Context *context)
 static void
 context_parse_comment (Context *context)
 {
-    Event *event;
     AXING_DEBUG ("context_parse_comment: %s\n", context->linecur);
     if (context->state != PARSER_STATE_COMMENT) {
         g_assert (EQ4 (context->linecur, '<', '!', '-', '-'));
-        event = event_new (context);
-        event->parent = context->parser->event;
-        AXING_DEBUG ("  PUSH COMMENT EVENT\n");
-        context->parser->event = event;
-        event->linenum = context->linenum;
-        event->colnum = context->colnum;
+        context->parser->txtlinenum = context->linenum;
+        context->parser->txtcolnum = context->colnum;
         context->linecur += 4; context->colnum += 4;
         context->cur_text = g_string_new (NULL);
         context->prev_state = context->state;
@@ -2968,7 +2988,6 @@ context_parse_comment (Context *context)
 
     if (context->state == PARSER_STATE_COMMENT) {
         char *cur = context->linecur;
-        event = context->parser->event;
 
         while (cur[0] != '\0') {
             if (cur[0] == '-' && cur[1] == '-') {
@@ -2980,16 +2999,12 @@ context_parse_comment (Context *context)
                     cur += 3; context->colnum += 3;
                     g_string_free (context->cur_text, TRUE);
                     context->cur_text = NULL;
-
-                    AXING_DEBUG ("  POP EVENT\n");
-                    context->parser->event = context->parser->event->parent;
-                    event_free (event);
                 }
                 else {
                     if (cur != context->linecur)
                         g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
                     cur += 3; context->colnum += 3;
-                    context->parser->event->content = g_string_free (context->cur_text, FALSE);
+                    context->parser->txtcontent =  g_string_free (context->cur_text, FALSE);
                     context->cur_text = NULL;
                     context->parser->event_type = AXING_NODE_TYPE_COMMENT;
                 }
@@ -3016,20 +3031,14 @@ context_parse_comment (Context *context)
 static void
 context_parse_instruction (Context *context)
 {
-    Event *event;
     AXING_DEBUG ("context_parse_instruction: %s\n", context->linecur);
     if (context->state != PARSER_STATE_INSTRUCTION) {
         g_assert (EQ2 (context->linecur, '<', '?'));
-
-        event = event_new (context);
-        event->parent = context->parser->event;
-        AXING_DEBUG ("  PUSH PI EVENT\n");
-        context->parser->event = event;
-        event->linenum = context->linenum;
-        event->colnum = context->colnum;
+        context->parser->txtlinenum = context->linenum;
+        context->parser->txtcolnum = context->colnum;
         context->linecur += 2; context->colnum += 2;
 
-        CONTEXT_GET_NAME (context, event->qname);
+        CONTEXT_GET_NAME (context, context->cur_qname);
         if (!(XML_IS_SPACE(context->linecur, context) ||
               context->linecur[0] == '\0' || context->linecur[0] == '?')) {
             ERROR_SYNTAX_MSG (context, "Expected space or question mark"); // test: newlines03
@@ -3048,7 +3057,6 @@ context_parse_instruction (Context *context)
 
     if (context->state == PARSER_STATE_INSTRUCTION) {
         char *cur = context->linecur;
-        event = context->parser->event;
 
         while (cur[0] != '\0') {
             if (EQ2 (cur, '?', '>')) {
@@ -3057,16 +3065,13 @@ context_parse_instruction (Context *context)
                     cur += 2; context->colnum += 2;
                     g_string_free (context->cur_text, TRUE);
                     context->cur_text = NULL;
-
-                    AXING_DEBUG ("  POP EVENT\n");
-                    context->parser->event = context->parser->event->parent;
-                    event_free (event);
+                    g_clear_pointer (&(context->cur_qname), g_free);
                 }
                 else {
                     if (cur != context->linecur)
                         g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
                     cur += 2; context->colnum += 2;
-                    context->parser->event->content = g_string_free (context->cur_text, FALSE);
+                    context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
                     context->cur_text = NULL;
                     context->parser->event_type = AXING_NODE_TYPE_INSTRUCTION;
                 }
@@ -3166,7 +3171,6 @@ context_parse_start_element (Context *context)
 
     event = event_new (context);
     event->parent = context->parser->event;
-    AXING_DEBUG ("  PUSH ELEMENT EVENT\n");
     context->parser->event = event;
     event->linenum = context->linenum;
     event->colnum = context->colnum;
@@ -3623,30 +3627,24 @@ context_process_entity_finish (Context *context)
 static void
 context_parse_text (Context *context)
 {
-    Event *event;
     char *cur = context->linecur;
     AXING_DEBUG ("context_parse_text: %s\n", context->linecur);
     while (cur[0] != '\0') {
         if (cur[0] == '<') {
             if (context->cur_text) {
-                g_free (context->parser->event->content);
                 if (cur != context->linecur)
                     g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->linecur = cur;
-                context->parser->event->content = g_string_free (context->cur_text, FALSE);
+                context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
                 context->cur_text = NULL;
                 context->parser->event_type = AXING_NODE_TYPE_CONTENT;
             }
+            context->linecur = cur;
             return;
         }
         if (context->cur_text == NULL) {
             context->cur_text = g_string_new (NULL);
-            event = event_new (context);
-            event->parent = context->parser->event;
-            AXING_DEBUG ("  PUSH TEXT EVENT\n");
-            context->parser->event = event;
-            event->linenum = context->linenum;
-            event->colnum = context->colnum;
+            context->parser->txtlinenum = context->linenum;
+            context->parser->txtcolnum = context->colnum;
         }
         if (cur[0] == '&') {
             if (cur != context->linecur)
@@ -3698,6 +3696,7 @@ context_finish_start_element (Context *context)
         }
         event->prefix = g_strndup (event->qname,
                                    colon - event->qname);
+        /* FIXME: I feel like localname could always point inside qname and not get dupd or freed */
         event->localname = g_strdup (localname);
         namespace = reader_lookup_namespace (AXING_READER (context->parser),
                                              event->prefix);

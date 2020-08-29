@@ -24,7 +24,7 @@ gcc -g3 -o test-axing-xml-parser-sync \
     axing-utils.c \
     test-axing-xml-parser-sync.c
 
-gcc -o time-axing-xml-parser \
+gcc -g3 -o time-axing-xml-parser \
     $(pkg-config --libs gio-2.0 --cflags gio-2.0) \
     axing-dtd-schema.c \
     axing-reader.c \
@@ -35,6 +35,6 @@ gcc -o time-axing-xml-parser \
     axing-utils.c \
     time-axing-xml-parser.c
 
-gcc -o time-libxml2 \
+gcc -g3 -o time-libxml2 \
     $(pkg-config --libs libxml-2.0 --cflags libxml-2.0) \
     time-libxml2.c
