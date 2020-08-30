@@ -3106,6 +3106,8 @@ context_parse_end_element (Context *context)
     AXING_DEBUG ("context_parse_end_element: %s\n", context->linecur);
 
     if (context->state != PARSER_STATE_ENDELM) {
+        gboolean matches;
+        int i;
         int colnum;
         /* We've just encountered an end tag. This could be skipped if there is
            space or newlines between the qname and the ">". That would set the
@@ -3122,13 +3124,29 @@ context_parse_end_element (Context *context)
         context->colnum += 2;
         context->linecur += 2; 
 
-        CONTEXT_GET_NAME (context, qname);
-        if (!g_str_equal (qname, context->parser->event->qname)) {
-            context->colnum = colnum;
-            ERROR_WRONGEND (context, qname); // test: element04
+        /* Don't have to actually read/dup the name. Just check that it's
+           byte-for-byte the same as the start element name. But then also
+           check that the start element name isn't a prefix of this name. */
+        matches = TRUE;
+        for (i = 0; context->parser->event->qname[i] != '\0'; i++) {
+            if (context->linecur[i] != context->parser->event->qname[i]) {
+                matches = FALSE;
+                break;
+            }
         }
-        g_free (qname);
-        qname = NULL;
+        if (matches && axing_utf8_bytes_name(context->linecur + i)) {
+            matches = FALSE;
+        }
+        if (!matches) {
+            /* But if it's not a match, we go ahead and burn cycles reading
+               the name for the error reporting. */
+            CONTEXT_GET_NAME (context, qname);
+            context->colnum = colnum;
+            ERROR_WRONGEND (context, qname);
+        }
+        context->linecur += i;
+        /* I wonder if I could just accumulate this count during the loop above. */
+        context->colnum += g_utf8_strlen (context->parser->event->qname, -1);
 
         /* Now we just re-use the start element event */
         context->parser->event->linenum = context->linenum;
