@@ -186,7 +186,6 @@ struct _Context {
     char          *pause_line;
     char          *cur_qname;
     char           quotechar;
-    GString       *cur_text;
     char          *decl_system;
     char          *decl_public;
     gboolean       decl_pedef;
@@ -237,7 +236,8 @@ struct _AxingXmlParser {
     AxingNodeType        event_type;
     Event               *event;
 
-    char                *txtcontent;
+    GString             *cur_text;
+
     int                  txtlinenum;
     int                  txtcolnum;
 
@@ -377,6 +377,7 @@ axing_xml_parser_init (AxingXmlParser *parser)
 {
     parser->context = context_new (parser);
     parser->context->state = PARSER_STATE_START;
+    parser->cur_text = g_string_sized_new (128);
 }
 
 static void
@@ -471,6 +472,9 @@ axing_xml_parser_finalize (GObject *object)
         g_array_free (parser->event_stack, TRUE);
 */
 
+    if (parser->cur_text)
+        g_string_free (parser->cur_text, TRUE);
+
     G_OBJECT_CLASS (axing_xml_parser_parent_class)->finalize (object);
 }
 
@@ -556,12 +560,10 @@ parser_clear_event (AxingXmlParser *parser)
     case AXING_NODE_TYPE_COMMENT:
     case AXING_NODE_TYPE_CONTENT:
     case AXING_NODE_TYPE_CDATA:
-        if (parser->txtcontent)
-            g_clear_pointer (&(parser->txtcontent), g_free);
+        g_string_truncate (parser->cur_text, 0);
         break;
     case AXING_NODE_TYPE_INSTRUCTION:
-        if (parser->txtcontent)
-            g_clear_pointer (&(parser->txtcontent), g_free);
+        g_string_truncate (parser->cur_text, 0);
         if (parser->context->cur_qname)
             g_clear_pointer (&(parser->context->cur_qname), g_free);
         break;
@@ -612,8 +614,6 @@ reader_read (AxingReader  *reader,
                 if (parser->context->parent != NULL) {
                     Context *parent = parser->context->parent;
                     AXING_DEBUG ("  POP CONTEXT\n");
-                    parent->cur_text = parser->context->cur_text;
-                    parser->context->cur_text = NULL;
                     context_free (parser->context);
                     parser->context = parent;
                 }
@@ -827,7 +827,7 @@ reader_get_content (AxingReader *reader)
                           parser->event_type == AXING_NODE_TYPE_CDATA   ||
                           parser->event_type == AXING_NODE_TYPE_INSTRUCTION,
                           NULL);
-    return parser->txtcontent;
+    return parser->cur_text->str;
 }
 
 
@@ -1290,10 +1290,10 @@ axing_xml_parser_parse_finish (AxingXmlParser *parser,
     bytes = axing_utf8_bytes_newline (cur, ver);                        \
     if (bytes) {                                                        \
         if (cur != context->linecur)                                    \
-            g_string_append_len(context->cur_text,                      \
+            g_string_append_len(context->parser->cur_text,              \
                                 context->linecur,                       \
                                 cur - context->linecur);                \
-        g_string_append_c (context->cur_text, 0x0A);                    \
+        g_string_append_c (context->parser->cur_text, 0x0A);            \
         cur += bytes;                                                   \
         context->linenum++; context->colnum = 1;                        \
         context->linecur = cur;                                         \
@@ -1827,18 +1827,8 @@ context_parse_line (Context *context)
                 CONTEXT_EAT_SPACES (context);
             }
             if (context->linecur[0] == '<') {
-                if (context->state == PARSER_STATE_TEXT && context->cur_text != NULL) {
-                    g_free (context->parser->event->content);
-                    context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
-                    context->cur_text = NULL;
-                    /* A well-placed entity can fool the parser into making a GString
-                       when we don't actually need one. If there's no text, don't return
-                       an event.
-                    */
-                    if (context->parser->txtcontent[0] == '\0') {
-                        g_clear_pointer(&(context->parser->txtcontent), g_free);
-                    }
-                    else {
+                if (context->state == PARSER_STATE_TEXT) {
+                    if (context->parser->cur_text->len != 0) {
                         context->parser->event_type = AXING_NODE_TYPE_CONTENT;
                         return;
                     }
@@ -2026,7 +2016,6 @@ context_parse_doctype (Context *context)
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_PUBLIC_VAL;
         }
@@ -2040,14 +2029,10 @@ context_parse_doctype (Context *context)
         while (cur[0] != '\0') {
             gsize bytes;
             if (cur[0] == context->quotechar) {
-                char *public;
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                public = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
-                /* FIXME: maybe a private take_public_id (and related) function to avoid the dup */
-                axing_dtd_schema_set_public_id (context->parser->doctype, public);
-                g_free (public);
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                axing_dtd_schema_set_public_id (context->parser->doctype, context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_SYSTEM;
                 cur++; context->colnum++;
                 context->linecur = cur;
@@ -2059,8 +2044,8 @@ context_parse_doctype (Context *context)
                characters allowed in a pubid, even in XML 1.1. */
             if (cur[0] == 0x0D || cur[0] == 0x0A) {
                 if (cur != context->linecur)
-                    g_string_append_len(context->cur_text, context->linecur, cur - context->linecur);
-                g_string_append_c (context->cur_text, 0x0A);
+                    g_string_append_len(context->parser->cur_text, context->linecur, cur - context->linecur);
+                g_string_append_c (context->parser->cur_text, 0x0A);
                 context->linenum++;
                 context->colnum = 1;
                 if (cur[0] == 0x0D && cur[1] == 0x0A)
@@ -2075,8 +2060,8 @@ context_parse_doctype (Context *context)
             context->colnum++;
             cur += bytes;
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2086,7 +2071,6 @@ context_parse_doctype (Context *context)
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_SYSTEM_VAL;
         }
@@ -2099,13 +2083,10 @@ context_parse_doctype (Context *context)
         char *cur = context->linecur;
         while (cur[0] != '\0') {
             if (cur[0] == context->quotechar) {
-                char *system;
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                system = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
-                axing_dtd_schema_set_system_id (context->parser->doctype, system);
-                g_free (system);
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                axing_dtd_schema_set_system_id (context->parser->doctype, context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_EXTID;
                 cur++; context->colnum++;
                 context->linecur = cur;
@@ -2113,8 +2094,8 @@ context_parse_doctype (Context *context)
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2269,19 +2250,18 @@ context_parse_doctype_element (Context *context)
         if (context->linecur[0] == '\0')
             return;
         if (EQ5 (context->linecur, 'E', 'M', 'P', 'T', 'Y')) {
-            context->cur_text = g_string_new ("EMPTY");
+            g_string_overwrite (context->parser->cur_text, 0, "EMPTY");
             context->linecur += 5; context->colnum += 5;
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
         }
         else if (EQ3 (context->linecur, 'A', 'N', 'Y')) {
-            context->cur_text = g_string_new ("ANY");
+            g_string_overwrite (context->parser->cur_text, 0, "ANY");
             context->linecur += 3; context->colnum += 3;
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_AFTER;
         }
         else if (context->linecur[0] == '(') {
-            context->cur_text = g_string_new (NULL);
+            g_string_overwrite (context->parser->cur_text, 0, "(");
             context->linecur++; context->colnum++;
-            g_string_append_c (context->cur_text, '(');
             context->doctype_state = DOCTYPE_STATE_INT_ELEMENT_VALUE;
         }
         else {
@@ -2311,25 +2291,22 @@ context_parse_doctype_element (Context *context)
              */
             CONTEXT_ADVANCE_CHAR (context, cur, FALSE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ELEMENT_AFTER) {
-        char *value;
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
         if (context->linecur[0] != '>')
             ERROR_SYNTAX_MSG (context, "Expected closing angle bracket");
-        value = g_string_free (context->cur_text, FALSE);
-        context->cur_text = NULL;
         axing_dtd_schema_add_element (context->parser->doctype,
                                       context->cur_qname,
-                                      value,
+                                      context->parser->cur_text->str,
                                       &(context->parser->error));
-        g_free (value);
+        g_string_truncate (context->parser->cur_text, 0);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         context->linecur++; context->colnum++;
@@ -2370,7 +2347,7 @@ context_parse_doctype_attlist (Context *context)
             return;
         cp = g_utf8_get_char (context->linecur);
         if (XML_IS_NAME_START_CHAR (cp)) {
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_VALUE;
         }
         else {
@@ -2385,6 +2362,7 @@ context_parse_doctype_attlist (Context *context)
             gunichar cp;
             if (cur[0] == '"') {
                 cur++; context->colnum++;
+                context->linecur = cur;
                 context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_QUOTE;
                 break;
             }
@@ -2403,8 +2381,8 @@ context_parse_doctype_attlist (Context *context)
              */
             CONTEXT_ADVANCE_CHAR (context, cur, FALSE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2413,18 +2391,18 @@ context_parse_doctype_attlist (Context *context)
         while (cur[0] != '\0') {
             if (cur[0] == '"') {
                 cur++; context->colnum++;
+                context->linecur = cur;
                 context->doctype_state = DOCTYPE_STATE_INT_ATTLIST_VALUE;
                 break;
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
     if (context->doctype_state == DOCTYPE_STATE_INT_ATTLIST_AFTER) {
-        char *value;
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
@@ -2433,13 +2411,11 @@ context_parse_doctype_attlist (Context *context)
                I'm leaving it in as an extra check, because code changes over time.
                But I can't create a test case for it. */
             ERROR_SYNTAX_MSG (context, "This error is a redundant check, and you should never see it");
-        value = g_string_free (context->cur_text, FALSE);
-        context->cur_text = NULL;
         axing_dtd_schema_add_attlist (context->parser->doctype,
                                       context->cur_qname,
-                                      value,
+                                      context->parser->cur_text->str,
                                       &(context->parser->error));
-        g_free (value);
+        g_string_truncate (context->parser->cur_text, 0);
         g_free (context->cur_qname);
         context->cur_qname = NULL;
         context->linecur++; context->colnum++;
@@ -2500,7 +2476,7 @@ context_parse_doctype_notation (Context *context) {
         if (context->linecur[0] == '"' || context->linecur[0] == '\'') {
             context->quotechar = context->linecur[0];
             context->linecur++; context->colnum++;
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL;
         }
         else {
@@ -2513,17 +2489,18 @@ context_parse_doctype_notation (Context *context) {
         while (cur[0] != '\0') {
             if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->decl_system = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                context->decl_system = g_strdup (context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_INT_NOTATION_AFTER;
                 cur++; context->colnum++;
+                context->linecur = cur;
                 break;
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2533,7 +2510,7 @@ context_parse_doctype_notation (Context *context) {
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC_VAL;
         }
@@ -2548,11 +2525,12 @@ context_parse_doctype_notation (Context *context) {
             gsize bytes;
             if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->decl_public = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                context->decl_public = g_strdup (context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_INT_NOTATION_PUBLIC_AFTER;
                 cur++; context->colnum++;
+                context->linecur = cur;
                 if (!(XML_IS_SPACE (cur, context) || cur[0] == '\0' || cur[0] == '>'))
                     ERROR_SYNTAX_MSG (context, "Expected space or closing angle bracket"); // test: doctype12
                 break;
@@ -2563,8 +2541,8 @@ context_parse_doctype_notation (Context *context) {
             context->colnum++;
             cur += bytes;
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2574,7 +2552,7 @@ context_parse_doctype_notation (Context *context) {
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT_NOTATION_SYSTEM_VAL;
         }
@@ -2670,7 +2648,7 @@ context_parse_doctype_entity (Context *context) {
         }
         else if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_VALUE;
         }
@@ -2684,7 +2662,7 @@ context_parse_doctype_entity (Context *context) {
         while (cur[0] != '\0') {
             if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
                 context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
                 cur++; context->colnum++;
                 context->linecur = cur;
@@ -2692,8 +2670,8 @@ context_parse_doctype_entity (Context *context) {
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2703,7 +2681,7 @@ context_parse_doctype_entity (Context *context) {
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_PUBLIC_VAL;
         }
@@ -2718,9 +2696,9 @@ context_parse_doctype_entity (Context *context) {
             gsize bytes;
             if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->decl_public = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                context->decl_public = g_strdup (context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM;
                 cur++; context->colnum++;
                 context->linecur = cur;
@@ -2734,8 +2712,8 @@ context_parse_doctype_entity (Context *context) {
             context->colnum++;
             cur += bytes;
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2745,7 +2723,7 @@ context_parse_doctype_entity (Context *context) {
             return;
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
-            context->cur_text = g_string_new (NULL);
+            g_string_truncate (context->parser->cur_text, 0);
             context->linecur++; context->colnum++;
             context->doctype_state = DOCTYPE_STATE_INT_ENTITY_SYSTEM_VAL;
         }
@@ -2759,17 +2737,18 @@ context_parse_doctype_entity (Context *context) {
         while (cur[0] != '\0') {
             if (cur[0] == context->quotechar) {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->decl_system = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                context->decl_system = g_strdup (context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 context->doctype_state = DOCTYPE_STATE_INT_ENTITY_AFTER;
                 cur++; context->colnum++;
+                context->linecur = cur;
                 break;
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -2788,10 +2767,10 @@ context_parse_doctype_entity (Context *context) {
         if (context->linecur[0] == '\0')
             return;
         if (EQ5 (context->linecur, 'N', 'D', 'A', 'T', 'A')) {
-            if (context->cur_text != NULL    || /* not after an EntityValue */
-                context->decl_system == NULL || /* only after PUBLIC or SYSTEM */
-                context->decl_pedef == TRUE  || /* no NDATA on param entities */
-                context->decl_ndata != NULL  )  /* only one NDATA */
+            if (context->parser->cur_text->len != 0 || /* not after an EntityValue */
+                context->decl_system == NULL        || /* only after PUBLIC or SYSTEM */
+                context->decl_pedef == TRUE         || /* no NDATA on param entities */
+                context->decl_ndata != NULL         )  /* only one NDATA */
                 ERROR_SYNTAX_MSG (context, "Did not expect NDATA here"); // test: entities48;
             context->linecur += 5; context->colnum += 5;
             if (!(XML_IS_SPACE (context->linecur, context) || context->linecur[0] == '\0'))
@@ -2802,13 +2781,11 @@ context_parse_doctype_entity (Context *context) {
         if (context->linecur[0] != '>')
             ERROR_SYNTAX_MSG (context, "Expected closing angle bracket"); // test: entities50
         if (context->decl_pedef) {
-            if (context->cur_text) {
-                char *value = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+            if (context->parser->cur_text->len != 0) {
                 axing_dtd_schema_add_parameter (context->parser->doctype,
                                                 context->cur_qname,
-                                                value);
-                g_free (value);
+                                                context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
             }
             else {
                 axing_dtd_schema_add_external_parameter (context->parser->doctype,
@@ -2818,13 +2795,11 @@ context_parse_doctype_entity (Context *context) {
             }
         }
         else {
-            if (context->cur_text) {
-                char *value = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+            if (context->parser->cur_text->len != 0) {
                 axing_dtd_schema_add_entity (context->parser->doctype,
                                              context->cur_qname,
-                                             value);
-                g_free (value);
+                                             context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
             }
             else if (context->decl_ndata) {
                 axing_dtd_schema_add_unparsed_entity (context->parser->doctype,
@@ -2842,10 +2817,6 @@ context_parse_doctype_entity (Context *context) {
         }
         g_free (context->cur_qname);
         context->cur_qname = NULL;
-        if (context->cur_text) {
-            g_string_free (context->cur_text, TRUE);
-            context->cur_text = NULL;
-        }
         if (context->decl_system) {
             g_free (context->decl_system);
             context->decl_system = NULL;
@@ -2923,8 +2894,6 @@ context_parse_parameter (Context *context)
 
         entctxt->parent = context;
         context->parser->context = entctxt;
-        entctxt->cur_text = context->cur_text;
-        context->cur_text = NULL;
         /* Let entctxt own value */
         entctxt->line = value;
         value = NULL;
@@ -2952,25 +2921,22 @@ context_parse_cdata (Context *context)
         context->parser->txtlinenum = context->linenum;
         context->parser->txtcolnum = context->colnum;
         context->linecur += 9; context->colnum += 9;
-        context->cur_text = g_string_new (NULL);
         context->state = PARSER_STATE_CDATA;
     }
 
     start = context->linecur;
     while (context->linecur[0] != '\0') {
         if (EQ3 (context->linecur, ']', ']', '>')) {
-            g_string_append_len (context->cur_text, start, context->linecur - start);
+            g_string_append_len (context->parser->cur_text, start, context->linecur - start);
             context->linecur += 3; context->colnum += 3;
-            context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
-            context->cur_text = NULL;
             context->parser->event_type = AXING_NODE_TYPE_CDATA;
             context->state = PARSER_STATE_TEXT;
             return;
         }
         CONTEXT_ADVANCE_CHAR (context, context->linecur, TRUE);
     }
-    if (context->cur_text && context->linecur != start)
-        g_string_append_len (context->cur_text, start, context->linecur - start);
+    if (context->linecur != start)
+        g_string_append_len (context->parser->cur_text, start, context->linecur - start);
 
  error:
     return;
@@ -2986,7 +2952,6 @@ context_parse_comment (Context *context)
         context->parser->txtlinenum = context->linenum;
         context->parser->txtcolnum = context->colnum;
         context->linecur += 4; context->colnum += 4;
-        context->cur_text = g_string_new (NULL);
         context->prev_state = context->state;
         context->state = PARSER_STATE_COMMENT;
     }
@@ -3002,15 +2967,12 @@ context_parse_comment (Context *context)
                 if (context->prev_state == PARSER_STATE_DOCTYPE) {
                     /* currently not doing anything with comments in the internal subset */
                     cur += 3; context->colnum += 3;
-                    g_string_free (context->cur_text, TRUE);
-                    context->cur_text = NULL;
+                    g_string_truncate (context->parser->cur_text, 0);
                 }
                 else {
                     if (cur != context->linecur)
-                        g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+                        g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
                     cur += 3; context->colnum += 3;
-                    context->parser->txtcontent =  g_string_free (context->cur_text, FALSE);
-                    context->cur_text = NULL;
                     context->parser->event_type = AXING_NODE_TYPE_COMMENT;
                 }
                 context->linecur = cur;
@@ -3023,8 +2985,8 @@ context_parse_comment (Context *context)
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -3053,11 +3015,10 @@ context_parse_instruction (Context *context)
         context->state = PARSER_STATE_INSTRUCTION;
     }
 
-    if (context->cur_text == NULL) {
+    if (context->parser->cur_text->len == 0) {
         CONTEXT_EAT_SPACES (context);
         if (context->linecur[0] == '\0')
             return;
-        context->cur_text = g_string_new (NULL);
     }
 
     if (context->state == PARSER_STATE_INSTRUCTION) {
@@ -3068,16 +3029,13 @@ context_parse_instruction (Context *context)
                 if (context->prev_state == PARSER_STATE_DOCTYPE) {
                     /* currently not doing anything with PIs in the internal subset */
                     cur += 2; context->colnum += 2;
-                    g_string_free (context->cur_text, TRUE);
-                    context->cur_text = NULL;
+                    g_string_truncate (context->parser->cur_text, 0);
                     g_clear_pointer (&(context->cur_qname), g_free);
                 }
                 else {
                     if (cur != context->linecur)
-                        g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+                        g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
                     cur += 2; context->colnum += 2;
-                    context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
-                    context->cur_text = NULL;
                     context->parser->event_type = AXING_NODE_TYPE_INSTRUCTION;
                 }
                 context->linecur = cur;
@@ -3090,8 +3048,8 @@ context_parse_instruction (Context *context)
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
 
@@ -3281,7 +3239,6 @@ context_parse_attrs (Context *context)
         if (context->linecur[0] == '\'' || context->linecur[0] == '"') {
             context->quotechar = context->linecur[0];
             context->linecur++; context->colnum++;
-            context->cur_text = g_string_new (NULL);
             context->state = PARSER_STATE_STELM_ATTVAL;
         }
         else if (context->linecur[0] == '\0') {
@@ -3299,9 +3256,9 @@ context_parse_attrs (Context *context)
                 char *xmlns = NULL;
                 char *attrval;
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                attrval = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+                attrval = g_strdup (context->parser->cur_text->str);
+                g_string_truncate (context->parser->cur_text, 0);
                 attr = context->parser->event->attrs;
 
                 if (EQ6 (attr->qname, 'x', 'm', 'l', 'n', 's', ':')) {
@@ -3360,7 +3317,7 @@ context_parse_attrs (Context *context)
             }
             else if (cur[0] == '&') {
                 if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+                    g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
                 context->linecur = cur;
                 context_parse_entity (context);
                 if (context->parser->error)
@@ -3376,8 +3333,8 @@ context_parse_attrs (Context *context)
             }
             CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
         }
-        if (context->cur_text && cur != context->linecur)
-            g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+        if (cur != context->linecur)
+            g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
         context->linecur = cur;
     }
  error:
@@ -3431,9 +3388,7 @@ context_parse_entity (Context *context)
             context->linecur++; context->colnum++;
         }
         if (XML_IS_CHAR(cp, context) || XML_IS_CHAR_RESTRICTED(cp, context)) {
-            if (context->cur_text == NULL)
-                context->cur_text = g_string_new (NULL);
-            g_string_append_unichar (context->cur_text, cp);
+            g_string_append_unichar (context->parser->cur_text, cp);
         }
         else {
             context->colnum = colnum;
@@ -3479,9 +3434,7 @@ context_parse_entity (Context *context)
             builtin = '"';
 
         if (builtin != '\0') {
-            if (context->cur_text == NULL) 
-                context->cur_text = g_string_new (NULL);
-            g_string_append_c (context->cur_text, builtin);
+            g_string_append_c (context->parser->cur_text, builtin);
         }
         else {
             context_process_entity (context, entname);
@@ -3524,9 +3477,6 @@ context_process_entity (Context *context, const char *entname)
             entctxt->showname = g_strdup_printf ("%s(&%s;)", entctxt->basename, entname);
             entctxt->state = context->state;
             entctxt->init_state = context->state;
-
-            entctxt->cur_text = context->cur_text;
-            context->cur_text = NULL;
         }
         else if (ndata) {
             ERROR_FIXME (context);
@@ -3549,8 +3499,6 @@ context_process_entity (Context *context, const char *entname)
                 entctxt->entname = g_strdup (entname);
                 entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
-                entctxt->cur_text = context->cur_text;
-                context->cur_text = NULL;
                 axing_resolver_resolve_async (resolver, context->resource,
                                               NULL, system, public, "xml:entity",
                                               context->parser->cancellable,
@@ -3585,8 +3533,6 @@ context_process_entity (Context *context, const char *entname)
                 entctxt->state = PARSER_STATE_TEXTDECL;
                 entctxt->init_state = context->state;
                 context->parser->context = entctxt;
-                entctxt->cur_text = context->cur_text;
-                context->cur_text = NULL;
 
                 context_start_sync (entctxt);
                 /* REFACTOR FIXME: return TRUE if decl? */
@@ -3638,8 +3584,6 @@ context_process_entity_finish (Context *context)
     context->parent = NULL;
 
     parent->state = context->state;
-    parent->cur_text = context->cur_text;
-    context->cur_text = NULL;
     context_free (context);
 
     context_read_data_cb (NULL, NULL, parent);
@@ -3654,24 +3598,20 @@ context_parse_text (Context *context)
     AXING_DEBUG ("context_parse_text: %s\n", context->linecur);
     while (cur[0] != '\0') {
         if (cur[0] == '<') {
-            if (context->cur_text) {
-                if (cur != context->linecur)
-                    g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
-                context->parser->txtcontent = g_string_free (context->cur_text, FALSE);
-                context->cur_text = NULL;
+            if (cur != context->linecur)
+                g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
+            if (context->parser->cur_text->len != 0)
                 context->parser->event_type = AXING_NODE_TYPE_CONTENT;
-            }
             context->linecur = cur;
             return;
         }
-        if (context->cur_text == NULL) {
-            context->cur_text = g_string_new (NULL);
+        if (context->parser->cur_text->len == 0) {
             context->parser->txtlinenum = context->linenum;
             context->parser->txtcolnum = context->colnum;
         }
         if (cur[0] == '&') {
             if (cur != context->linecur)
-                g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+                g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
             context->linecur = cur;
             context_parse_entity (context);
             if (context->parser->error)
@@ -3684,8 +3624,8 @@ context_parse_text (Context *context)
         }
         CONTEXT_ADVANCE_CHAR (context, cur, TRUE);
     }
-    if (context->cur_text && cur != context->linecur)
-        g_string_append_len (context->cur_text, context->linecur, cur - context->linecur);
+    if (cur != context->linecur)
+        g_string_append_len (context->parser->cur_text, context->linecur, cur - context->linecur);
     context->linecur = cur;
 
  error:
@@ -3868,9 +3808,6 @@ context_free (Context *context)
     g_free (context->showname);
     g_free (context->pause_line);
     g_free (context->cur_qname);
-
-    if (context->cur_text)
-        g_string_free (context->cur_text, TRUE);
 
     g_free (context->decl_system);
     g_free (context->decl_public);
