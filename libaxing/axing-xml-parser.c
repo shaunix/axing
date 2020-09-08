@@ -600,7 +600,7 @@ reader_read (AxingReader  *reader,
         if (parser->context->line == NULL) {
             /* If just parsing a string, there's no stream, and this context is done */
             if (parser->context->datastream) {
-                AXING_DEBUG ("  READ %i\n", parser->context->datastream);
+                AXING_DEBUG ("  READ %i\n", GPOINTER_TO_INT(parser->context->datastream));
                 parser->context->line = g_data_input_stream_read_line (parser->context->datastream, NULL,
                                                                        parser->context->parser->cancellable,
                                                                        &(parser->error));
@@ -703,6 +703,7 @@ reader_read_finish (AxingReader   *reader,
                     GError       **error)
 {
     /* FIXME REFACTOR */
+    return FALSE;
 }
 
 
@@ -945,6 +946,7 @@ reader_get_attr_nsname (AxingReader *reader, const char *qname)
                                           NULL);
             return attr->nsname;
         }
+    return NULL;
 }
 
 
@@ -1023,7 +1025,6 @@ axing_xml_parser_parse (AxingXmlParser  *parser,
 static void
 context_start_sync (Context *context)
 {
-    char *line;
     AXING_DEBUG ("context_start_sync\n");
 
     context->srcstream = axing_resource_read (context->resource,
@@ -1595,13 +1596,14 @@ context_parse_bom (Context *context)
     case BOM_ENCODING_NONE:
         return FALSE;
     }
+
+    return FALSE;
 }
 
 
 static void
 context_parse_xml_decl (Context *context)
 {
-    int i;
     gsize bufsize;
     guchar *buf, *c;
     char quot;
@@ -1615,7 +1617,7 @@ context_parse_xml_decl (Context *context)
     if (bufsize >= 3 && c[0] == 0xEF && c[1] == 0xBB && c[2] == 0xBF)
         c = c + 3;
 
-    if (!(bufsize >= 6 + (c - buf) && !strncmp(c, "<?xml", 5) && XML_IS_SPACE(c + 5, context) )) {
+    if (!(bufsize >= 6 + (c - buf) && EQ5(c, '<', '?', 'x', 'm', 'l') && XML_IS_SPACE(c + 5, context) )) {
         if (c != buf)
             g_input_stream_skip (G_INPUT_STREAM (context->datastream), c - buf, NULL, NULL);
         return;
@@ -1626,7 +1628,8 @@ context_parse_xml_decl (Context *context)
     EAT_SPACES (c, buf, bufsize, context);
     CHECK_BUFFER (c, 8, buf, bufsize, context);
     if (c[0] == 'v') {
-        if (!(!strncmp(c, "version", 7) && (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
+        if (!(EQ7(c, 'v', 'e', 'r', 's', 'i', 'o', 'n') &&
+              (c[7] == '=' || XML_IS_SPACE(c + 7, context)) )) {
             ERROR_SYNTAX (context);
         }
         c += 7; context->colnum += 7;
@@ -1654,7 +1657,8 @@ context_parse_xml_decl (Context *context)
     if (c[0] == 'e') {
         GString *enc;
         CHECK_BUFFER (c, 9, buf, bufsize, context);
-        if (!(!strncmp(c, "encoding", 8) && (c[8] == '=' || XML_IS_SPACE(c + 8, context)) )) {
+        if (!(EQ8(c, 'e', 'n', 'c', 'o', 'd', 'i', 'n', 'g') &&
+              (c[8] == '=' || XML_IS_SPACE(c + 8, context)) )) {
             ERROR_SYNTAX (context);
         }
         c += 8; context->colnum += 8;
@@ -1692,7 +1696,8 @@ context_parse_xml_decl (Context *context)
         }
 
         CHECK_BUFFER (c, 11, buf, bufsize, context);
-        if (!(!strncmp(c, "standalone", 10) && (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
+        if (!(EQ10(c, 's', 't', 'a', 'n', 'd', 'a', 'l', 'o', 'n', 'e') &&
+              (c[10] == '=' || XML_IS_SPACE(c + 10, context)) )) {
             ERROR_SYNTAX (context);
         }
         c += 10; context->colnum += 10;
@@ -3513,7 +3518,6 @@ context_process_entity (Context *context, const char *entname)
             if (TRUE) {
                 Context *entctxt;
                 AxingResource *resource;
-                GFile *file;
                 resource = axing_resolver_resolve (context->parser->resolver,
                                                    context->resource,
                                                    NULL, system, public,
@@ -3690,7 +3694,6 @@ context_finish_start_element (Context *context)
         if (colon != NULL) {
             const char *localname;
             const char *namespace;
-            int pre;
             if (colon == attr->qname) {
                 ERROR_NS_QNAME_ATTR (context, attr); // test: xmlns13
             }
